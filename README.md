@@ -1,14 +1,14 @@
-# 🏨 Real-Time Hotel Data Listing API & Large-Scale Ingestion Pipeline
+# Real-Time Hotel Data Listing API & Large-Scale Ingestion Pipeline
 
 A production-grade, asynchronous REST API and high-throughput data pipeline for fetching comprehensive hotel & accommodation data across any global region or bounding box with coordinates, detailed property metadata, spatial indexing, and multi-format exports.
 
 ---
 
-## 🌟 Key Features
+##  Key Features
 
-- 📍 **Sub-millisecond Spatial Indexing**: 3D Cartesian `cKDTree` spatial index for lightning-fast radius (`/nearby`) and bounding-box (`/bbox`) searches.
-- ⚡ **Real-Time OSM / Overpass Engine**: Live querying across multiple Overpass mirrors (`overpass-api.de`, `lz4.overpass-api.de`, `kumi.systems`, `mail.ru`) with automatic failover and backoff.
-- 🏢 **Comprehensive Property Metadata (54 Attributes)**:
+- **Sub-millisecond Spatial Indexing**: 3D Cartesian `cKDTree` spatial index for lightning-fast radius (`/nearby`) and bounding-box (`/bbox`) searches.
+- **Real-Time OSM / Overpass Engine**: Live querying across multiple Overpass mirrors (`overpass-api.de`, `lz4.overpass-api.de`, `kumi.systems`, `mail.ru`) with automatic failover and backoff.
+- **Comprehensive Property Metadata (54 Attributes)**:
   - **Identifiers**: `hotel_id`, `osm_id`, `osm_type`, `xotelo_key`, `wikidata_id`
   - **Core Attributes**: `name`, `brand`, `operator`, `property_type` (*hotel, hostel, resort, guest house, motel, apartment, chalet, camp site*), `description`
   - **Geospatial**: `latitude`, `longitude`, `elevation_m`, `geohash`, `region`, `distance_meters`
@@ -17,13 +17,13 @@ A production-grade, asynchronous REST API and high-throughput data pipeline for 
   - **Amenities**: `has_wifi`, `has_pool`, `has_parking`, `has_air_conditioning`, `has_restaurant`, `has_bar`, `has_spa`, `has_gym`, `is_pet_friendly`, `is_wheelchair_accessible`, `smoking_allowed`
   - **Capacity & Timings**: `rooms_count`, `beds_count`, `checkin_time`, `checkout_time`, `opening_hours`
   - **Contact & Media**: `phone`, `email`, `website`, `booking_url`, `image_url`
-- 📊 **Large-Scale Data Pipeline**: Capable of ingesting tens of thousands of properties across custom or 29+ pre-configured global tourist corridors.
-- 💾 **Multi-Format Large DataFrame Exports**: Instant export to **CSV**, **Apache Parquet**, **SQLite**, and **JSON**.
-- 🖥️ **Interactive Web Dashboard**: Embedded Leaflet map, live search filters, real-time property details, and visual pipeline runner.
+-  **Large-Scale Data Pipeline**: Capable of ingesting tens of thousands of properties across custom or 29+ pre-configured global tourist corridors.
+-  **Multi-Format Large DataFrame Exports**: Instant export to **CSV**, **Apache Parquet**, **SQLite**, and **JSON**.
+- **Interactive Web Dashboard**: Embedded Leaflet map, live search filters, real-time property details, and visual pipeline runner.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Setup Environment
 ```bash
@@ -46,7 +46,7 @@ PYTHONPATH=. uvicorn hotels_api.main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
-## 🛠️ CLI Pipeline Runner
+## CLI Pipeline Runner
 
 Fetch real-time data across multiple destinations and generate master datasets directly from the command line:
 
@@ -68,7 +68,7 @@ PYTHONPATH=. python pipeline_runner.py --list-regions
 
 ---
 
-## 📡 REST API Reference
+## REST API Reference
 
 ### 1. Search Hotels
 `GET /api/v1/hotels/search`
@@ -169,7 +169,7 @@ Returns total record counts, memory footprint, breakdown by accommodation catego
 
 ---
 
-## 🧪 Testing
+##  Testing
 
 Run unit tests and API integration suite:
 ```bash
