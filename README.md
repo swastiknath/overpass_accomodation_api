@@ -1,177 +1,246 @@
-# 🏨 Real-Time Hotel Data Listing API & Large-Scale Ingestion Pipeline
+# India Travel Safety & Accommodation Intelligence Platform
 
-A production-grade, asynchronous REST API and high-throughput data pipeline for fetching comprehensive hotel & accommodation data across any global region or bounding box with coordinates, detailed property metadata, spatial indexing, and multi-format exports.
-
----
-
-## 🌟 Key Features
-
-- 📍 **Sub-millisecond Spatial Indexing**: 3D Cartesian `cKDTree` spatial index for lightning-fast radius (`/nearby`) and bounding-box (`/bbox`) searches.
-- ⚡ **Real-Time OSM / Overpass Engine**: Live querying across multiple Overpass mirrors (`overpass-api.de`, `lz4.overpass-api.de`, `kumi.systems`, `mail.ru`) with automatic failover and backoff.
-- 🏢 **Comprehensive Property Metadata (54 Attributes)**:
-  - **Identifiers**: `hotel_id`, `osm_id`, `osm_type`, `xotelo_key`, `wikidata_id`
-  - **Core Attributes**: `name`, `brand`, `operator`, `property_type` (*hotel, hostel, resort, guest house, motel, apartment, chalet, camp site*), `description`
-  - **Geospatial**: `latitude`, `longitude`, `elevation_m`, `geohash`, `region`, `distance_meters`
-  - **Address Breakdown**: `formatted_address`, `street`, `house_number`, `neighborhood`, `city`, `state`, `country`, `postal_code`
-  - **Ratings & Pricing**: `stars`, `user_rating`, `review_count`, `price_min`, `price_max`, `currency`, `price_tier`
-  - **Amenities**: `has_wifi`, `has_pool`, `has_parking`, `has_air_conditioning`, `has_restaurant`, `has_bar`, `has_spa`, `has_gym`, `is_pet_friendly`, `is_wheelchair_accessible`, `smoking_allowed`
-  - **Capacity & Timings**: `rooms_count`, `beds_count`, `checkin_time`, `checkout_time`, `opening_hours`
-  - **Contact & Media**: `phone`, `email`, `website`, `booking_url`, `image_url`
-- 📊 **Large-Scale Data Pipeline**: Capable of ingesting tens of thousands of properties across custom or 29+ pre-configured global tourist corridors.
-- 💾 **Multi-Format Large DataFrame Exports**: Instant export to **CSV**, **Apache Parquet**, **SQLite**, and **JSON**.
-- 🖥️ **Interactive Web Dashboard**: Embedded Leaflet map, live search filters, real-time property details, and visual pipeline runner.
+A production-ready, deterministic multi-hazard safety intelligence and hotel ranking system designed for India. The system combines real-time geo-hazard feeds, satellite anomaly detections, conflict statistics, district crime baselines, and OpenStreetMap accommodations with a transparent Noisy-OR fusion engine and a verified OpenRouter LLM narration layer.
 
 ---
 
-## 🚀 Quick Start
+## Non-Negotiable Design Principles
 
-### 1. Setup Environment
+1. **Deterministic Scoring**: Safety scores (0–100) are computed strictly by mathematical fusion. LLMs **never** compute, adjust, or override risk scores. LLMs only narrate and audit pre-computed results.
+2. **Score Decomposition**: Every response decomposes into individual hazard contributions, static vs. dynamic sub-scores, and a coverage audit.
+3. **Missing Data is Not Zero Risk**: A failed or empty source is excluded from calculation and flagged in the coverage report, never silently treated as safe ($\sigma \neq 0$).
+4. **Resilient Architecture**: Scores and hotel rankings render immediately without LLM dependencies. If OpenRouter is slow, capped, or unconfigured, verified deterministic templates are served.
+5. **Freshness & Research Disclaimer**: Every report carries source freshness timestamps, config version, and a disclaimer that this is a research tool, not a replacement for official NDMA/IMD advisories.
+6. **India-Only Scope**: Coordinates outside India territory are rejected with a clear out-of-coverage response.
+
+---
+
+## Architecture Overview
+
+```
+                      ┌────────────────────────────────────────┐
+                      │    Next.js 16 (App Router) Frontend    │
+                      │  Tailwind CSS • MapLibre GL • Query    │
+                      └──────────────────┬─────────────────────┘
+                                         │ HTTP
+                                         ▼
+                      ┌────────────────────────────────────────┐
+                      │           FastAPI Gateway              │
+                      │  Rate Limiting • CORS • Caching        │
+                      └──────┬──────────────────────────┬──────┘
+                             │                          │
+              ┌──────────────┴──────────────┐           │ POST /v1/explanation
+              │ GET /v1/search-report       │           │ (Cached Report ID)
+              ▼                             ▼           ▼
+┌──────────────────────────┐   ┌──────────────────────────┐   ┌──────────────────────────┐
+│   Geocoding & Spatial    │   │  Concurrent Connectors   │   │ OpenRouter LLM Layer     │
+│   Nominatim / H3 Res 7   │   │  GDACS • USGS • FIRMS    │   │  1. Sanitized Narrator   │
+│   District Boundaries    │   │  ACLED • Crime • Weather │   │  2. Deterministic Number │
+└─────────────┬────────────┘   │  GDELT • Bhuvan Atlas    │   │     & Evidence Auditor   │
+              │                └────────────┬─────────────┘   │  3. Model Verifier       │
+              │                             │                 │  4. Fallback Template    │
+              └──────────────┬──────────────┘                 └─────────────┬────────────┘
+                             ▼                                              │
+              ┌─────────────────────────────┐                               │
+              │  Deterministic Fusion Engine│                               │
+              │  • Per-Signal Normalization │                               │
+              │  • Spatial/Temporal Decay   │                               │
+              │  • Noisy-OR Aggregation     │                               │
+              │  • Missing Data Exclusion   │                               │
+              └──────────────┬──────────────┘                               │
+                             │                                              │
+                             ▼                                              │
+              ┌─────────────────────────────┐                               │
+              │   Accommodations Module     │                               │
+              │  • Overpass Provider        │                               │
+              │  • Local Per-Hotel Scoring  │                               │
+              │  • Emergency Help Proximity │                               │
+              │  • Transparent α-Ranking    │                               │
+              └──────────────┬──────────────┘                               │
+                             │                                              │
+                             └──────────────────────┬───────────────────────┘
+                                                    ▼
+                                    ┌──────────────────────────────┐
+                                    │ Unified JSON + GeoJSON Output│
+                                    └──────────────────────────────┘
+```
+
+---
+
+## Mathematical Fusion Methodology
+
+All fusion parameters are defined in `config/fusion_config.yaml` and version-tagged.
+
+### 1. Per-Signal Normalization ($\sigma_i \in [0, 1]$)
+- **Landslide Susceptibility**: Model probability used directly: $\sigma = \text{prob} \in [0, 1]$.
+- **Flood / Cyclone (GDACS)**: Ordinal anchors: Green = $0.20$, Orange = $0.55$, Red = $0.90$.
+- **Earthquake (USGS)**: Sigmoid centered at magnitude $M_0 = 5.0$ with steepness $k = 1.2$:
+  $$\sigma = \frac{1}{1 + e^{-k(M - M_0)}}$$
+- **Fire (NASA FIRMS)**: Source confidence field normalized: $\sigma = \frac{\text{confidence}}{100}$.
+- **Conflict (ACLED)**:
+  $$\sigma = (1 - e^{-\lambda \cdot \text{fatalities}}) \times \text{multiplier}[\text{event\_type}]$$
+  where $\lambda = 0.25$ and multipliers follow $\text{protest } (0.35) < \text{riot } (0.65) < \text{armed clash } (1.00)$.
+- **Crime (data.gov.in / NCRB)**: District percentile rank across all national districts for the recorded year: $\sigma = \text{percentile} \in [0, 1]$.
+- **Weather (Open-Meteo / IMD)**: Threshold ramp based on 24-hour rainfall and peak wind speed against configured extreme triggers.
+- **Local News (GDELT DOC 2.0)**:
+  $$\sigma = \min\left(1.0, \, c_{\text{conf}} \cdot \text{tone\_severity} \cdot \text{recency\_decay} \cdot \frac{\ln(1 + \text{count})}{\ln(1 + \text{norm})}\right)$$
+
+### 2. Effective Weight ($w_i$)
+$$w_i = \text{base\_weight}(\text{hazard}) \times c_i \times d(\text{tier}) \times g_{\text{hazard}}(\text{age}) \times K_{\text{hazard}}(\text{distance})$$
+- $c_i$: Source / classifier confidence factor.
+- $d(\text{tier})$: Resolution tier multiplier: Point = $1.0$, Polygon = $0.85$, District = $0.60$.
+- $g_{\text{hazard}}(\text{age})$: Temporal half-life decay: $g = 2^{-\text{age} / t_{\text{half}}}$. Static layers do not decay ($g = 1.0$).
+- $K_{\text{hazard}}(\text{distance})$: Gaussian spatial kernel:
+  $$K(d) = \exp\left(-\frac{d^2}{2s^2}\right)$$
+  For district-tier signals, $K = 1.0$ inside the district and $0.0$ outside.
+- Every term $w_i \cdot \sigma_i$ is clamped to $[0, 1]$.
+
+### 3. Noisy-OR Aggregation
+Risk is aggregated independently across static and dynamic layers:
+$$S_{\text{static}} = 1 - \prod_{i \in \text{static}} (1 - w_i \sigma_i)$$
+$$S_{\text{dynamic}} = 1 - \prod_{i \in \text{dynamic}} (1 - w_i \sigma_i)$$
+$$S_{\text{total}} = 1 - (1 - S_{\text{static}})(1 - S_{\text{dynamic}})$$
+$$\text{safety\_score} = \text{round}(100 \times (1 - S_{\text{total}})) \in [0, 100]$$
+
+### 4. Explainability & Contributions
+$$\text{contribution}_i = \frac{w_i \sigma_i}{\sum_j w_j \sigma_j}$$
+If no active hazards exist ($\sum = 0$), returns an empty contribution list and flags `no_active_hazards: true` without division errors.
+
+### 5. Transparent Hotel Ranking
+$$\text{rank\_score} = \alpha \cdot \text{safety\_norm} + (1 - \alpha) \cdot \text{quality\_norm}$$
+- $\alpha \in [0, 1]$ (default $0.7$, adjustable via slider).
+- $\text{quality\_norm}$ normalizes only present attributes (stars, guest rating weighted by review count, price tier).
+- Missing attributes **never penalize** rank: properties without quality data are scored purely on safety with `limited_info: true`.
+- Tie-breaks use distance to query point.
+- **Same Area Warning**: If score spread between best and worst hotel is below $\epsilon = 2.5$, the system flags `same_area_warning: true` notifying the user that accommodations share uniform area exposure.
+
+---
+
+## Component Implementation Status
+
+| Component | Status | Implementation Details |
+| :--- | :---: | :--- |
+| **Deterministic Fusion Engine** | **REAL** | Full Noisy-OR aggregation, Gaussian spatial kernels, exponential temporal decay, and explainability breakdown. |
+| **OSM Overpass Hotel Provider** | **REAL** | Free Overpass API integration querying hotels, hostels, guest houses, and computing emergency hospital/police/fire distances. |
+| **Google Places Provider** | **STUB** | Stubbed with `TODO(operator)` behind `HotelProvider` interface. |
+| **Foursquare Provider** | **STUB** | Stubbed with `TODO(operator)` behind `HotelProvider` interface. |
+| **Amadeus Hospitality Provider** | **STUB** | Stubbed with `TODO(operator)` behind `HotelProvider` interface. |
+| **Nominatim Geocoding** | **REAL** | Pluggable geocoder with 1 req/sec rate limiting, in-memory cache, and `countrycodes=in`. |
+| **Photon / Mapbox Geocoding** | **BEST-EFFORT** | Implemented as configurable providers falling back to Nominatim when keys are absent. |
+| **GDACS / USGS / FIRMS Alerts** | **REAL** | Unified async connector for real-time flood, earthquake, and active fire anomalies. |
+| **ACLED Conflict Connector** | **REAL** | Ingests political violence and protest records; enforces licensing redistribution boundaries. |
+| **NCRB Crime Statistics** | **REAL** | data.gov.in district IPC crime percentile baseline ingestion. |
+| **Open-Meteo & IMD Weather** | **REAL** | 24h precipitation, wind thresholds, atmospheric risk, and IMD warning alerts. |
+| **GDELT News Client** | **REAL** | DOC 2.0 API ingestion with NER correction and keyword classification. |
+| **ISRO Bhuvan Client** | **BEST-EFFORT** | WMS/WFS raster downloader; subject to ISRO portal uptime and IP access controls. |
+| **OpenRouter Narrator & Verifier** | **REAL** | Two-model architecture (Narrator + Verifier) with deterministic number checking, budget limits, and fallback template. |
+| **Curated Safety Advice** | **BEST-EFFORT** | Attached deterministically from `config/advice_catalog.yaml`. Currently marked as **PLACEHOLDER** awaiting operator review. |
+| **Next.js Web Frontend** | **REAL** | Responsive App Router, MapLibre GL map, TanStack Query, progressive rendering, WCAG AA contrast. |
+
+---
+
+## Assumptions
+
+1. **Geographic Coverage**: India territory is bounded by EPSG:4326 envelope $[68.0, 6.0, 97.5, 37.5]$. Coordinates outside this bounding box are rejected as out-of-coverage.
+2. **Overpass Public Endpoint**: Public Overpass instances (`overpass-api.de`) are rate-limited and intended for development/demonstration. High-volume production deployments should point `OVERPASS_URL` to a self-hosted instance.
+3. **OSM Accommodation Completeness**: OpenStreetMap accommodation tags often lack guest review ratings or price tiers. Missing quality attributes are treated as absent, not zero quality.
+4. **Licensing Redistribution Restrictions**: Under ACLED academic terms, `REDISTRIBUTION_ALLOWED=false` causes the API to suppress raw lat/lon coordinates and detailed notes in public GeoJSON, emitting only aggregated H3 cell and derived metrics.
+5. **Ordinal Hazard Anchor Calibration**: GDACS alerts are mapped to ordinal anchors (Green 0.2, Orange 0.55, Red 0.9). These parameters are expert-assigned priors marked in `fusion_config.yaml` to be calibrated against empirical damage data.
+
+---
+
+## Manual Operator Review Checklist
+
+Before promoting to live public production, the operator must complete these manual tasks:
+
+- [ ] **Review `config/advice_catalog.yaml`**: Validate all official emergency helpline numbers (e.g., NDMA 1078, Unified 112) and state-specific disaster authority links.
+- [ ] **Calibrate Fusion Weights**: Calibrate the expert-assigned prior weights in `config/fusion_config.yaml` using historical incident datasets.
+- [ ] **Provision Live Connector Credentials**:
+  - OpenRouter API Key (`OPENROUTER_API_KEY`)
+  - ACLED credentials (`ACLED_EMAIL`, `ACLED_PASSWORD`)
+  - NASA FIRMS Map Key (`FIRMS_MAP_KEY`)
+  - data.gov.in API Key (`DATAGOV_API_KEY`)
+  - ISRO Bhuvan portal credentials (`BHUVAN_USERNAME`, `BHUVAN_PASSWORD`)
+- [ ] **Select Production OpenRouter Models**: Choose your preferred narrator (`OPENROUTER_MODEL_NARRATOR`) and verifier (`OPENROUTER_MODEL_VERIFIER`) model IDs.
+- [ ] **Select Production Map Tile Provider**: Replace the demo MapLibre tile style URL (`MAP_STYLE_URL`) with an API key from MapTiler, Stadia Maps, or a self-hosted vector tile server.
+- [ ] **Commercial Hotel Provider**: If desired, implement the Google Places or Amadeus hotel provider stubs in `backend/hotels/provider.py`.
+
+---
+
+## Quickstart: Running in DEMO_MODE (Zero API Keys)
+
+The entire platform runs out of the box with Docker Compose in `DEMO_MODE=true` using recorded connector fixtures and canned verified narratives.
+
+### 1. Run with Docker Compose
 ```bash
-# Create and activate virtual environment
+docker compose up --build
+```
+- **Web Frontend**: http://localhost:3000
+- **FastAPI Documentation**: http://localhost:8000/docs
+- **Health Endpoint**: http://localhost:8000/v1/health
+
+### 2. Run Locally (Development Mode)
+
+#### Backend:
+```bash
+cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
+
+# Start FastAPI server in demo mode
+DEMO_MODE=true uvicorn api.main:app --reload --port 8000
 ```
 
-### 2. Run the REST API & Dashboard
+#### Frontend:
 ```bash
-PYTHONPATH=. uvicorn hotels_api.main:app --host 0.0.0.0 --port 8000 --reload
+cd frontend
+npm install --legacy-peer-deps
+npm run dev
 ```
-
-- **Interactive Map Dashboard**: Open [http://localhost:8000](http://localhost:8000)
-- **Interactive Swagger API Docs**: Open [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc Documentation**: Open [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
 ---
 
-## 🛠️ CLI Pipeline Runner
+## Running Test Suites
 
-Fetch real-time data across multiple destinations and generate master datasets directly from the command line:
-
+### Backend Tests (Pytest)
+Includes property tests, hotel ranking tests, OpenRouter verification tests, and API endpoint integration tests:
 ```bash
-# Run pipeline across specific regions
-PYTHONPATH=. python pipeline_runner.py --regions goa,rishikesh_haridwar,manali_kasol,kathmandu_thamel
-
-# Run pipeline over all 29+ pre-configured global regions
-PYTHONPATH=. python pipeline_runner.py --all
-
-# List available pre-configured regions
-PYTHONPATH=. python pipeline_runner.py --list-regions
+PYTHONPATH=backend pytest backend/tests/
 ```
+Expected output: **26 passed** (0 failures).
 
-### Generated Files in `./data/`:
-- `hotels_master.csv` (Flat CSV for Excel / Pandas)
-- `hotels_master.parquet` (Columnar Apache Parquet for high-speed Big Data queries)
-- `hotels.db` (SQLite relational database for SQL queries)
-
----
-
-## 📡 REST API Reference
-
-### 1. Search Hotels
-`GET /api/v1/hotels/search`
-
-| Parameter | Type | Description |
-|---|---|---|
-| `q` | string | Search keyword (matches name, brand, or address) |
-| `city` | string | Filter by city name |
-| `region` | string | Filter by region identifier |
-| `property_type` | string | `hotel`, `hostel`, `guest_house`, `resort`, `apartment`, `motel` |
-| `min_stars` / `max_stars` | float | Star rating filter (1.0 to 5.0) |
-| `has_wifi`, `has_pool`, `has_ac` | bool | Amenity flags |
-| `has_restaurant`, `has_parking` | bool | Amenity flags |
-| `is_pet_friendly`, `is_wheelchair` | bool | Amenity flags |
-| `page` / `page_size` | int | Pagination parameters |
-| `sort_by` / `sort_desc` | string/bool | Sort by `name`, `stars`, `price_min`, `user_rating` |
-
-**Example**:
+### Frontend Component Tests (Vitest)
+Tests ScorePanel, CoveragePanel, and HotelsList ranking & filters:
 ```bash
-curl "http://localhost:8000/api/v1/hotels/search?q=Resort&min_stars=4&has_pool=true"
+cd frontend
+npx vitest run
 ```
+Expected output: **9 passed** (0 failures).
 
----
-
-### 2. Nearby Proximity Search (Coordinates + Radius)
-`GET /api/v1/hotels/nearby`
-
-| Parameter | Type | Description |
-|---|---|---|
-| `latitude` | float | Anchor latitude |
-| `longitude` | float | Anchor longitude |
-| `radius_km` | float | Search radius in km (default: 5.0) |
-| `realtime` | bool | If `true`, queries live Overpass in real-time if missing |
-| `limit` | int | Max results (default: 50) |
-
-**Example**:
+### End-to-End Smoke Test (Playwright)
+Executes end-to-end browser flow in DEMO_MODE (Search $\rightarrow$ Score $\rightarrow$ Hotels $\rightarrow$ Narrative badge):
 ```bash
-curl "http://localhost:8000/api/v1/hotels/nearby?latitude=15.53&longitude=73.76&radius_km=3"
+cd frontend
+npx playwright test
 ```
+Expected output: **1 passed**.
 
 ---
 
-### 3. Bounding Box Search
-`GET /api/v1/hotels/bbox`
+## Environment Variables Reference
 
-| Parameter | Type | Description |
-|---|---|---|
-| `south`, `west`, `north`, `east` | float | Bounding box coordinates |
-| `realtime` | bool | Live Overpass query flag |
-| `limit` | int | Max results |
+See `.env.example` for all configurable keys.
 
-**Example**:
-```bash
-curl "http://localhost:8000/api/v1/hotels/bbox?south=15.2&west=73.8&north=15.6&east=74.2"
-```
-
----
-
-### 4. Single Property Profile
-`GET /api/v1/hotels/{hotel_id}`
-
-**Example**:
-```bash
-curl "http://localhost:8000/api/v1/hotels/osm_node_12098612531"
-```
-
----
-
-### 5. Trigger Background Ingestion Pipeline
-`POST /api/v1/pipeline/run`
-
-```json
-{
-  "regions": ["goa", "rishikesh_haridwar", "bali_ubud_seminyak"],
-  "enrich_synthetic_rates": true,
-  "output_dir": "./data"
-}
-```
-
----
-
-### 6. Pipeline Progress & Status
-`GET /api/v1/pipeline/status`
-
-Returns live completion percentage, currently active region step, and processed records count.
-
----
-
-### 7. Dataset Summary & Statistical Breakdown
-`GET /api/v1/dataframe/summary`
-
-Returns total record counts, memory footprint, breakdown by accommodation category, star ratings, and amenity coverage percentages.
-
----
-
-### 8. Export Large DataFrame
-`GET /api/v1/dataframe/export?format={csv|parquet|sqlite|json}`
-
----
-
-## 🧪 Testing
-
-Run unit tests and API integration suite:
-```bash
-PYTHONPATH=. pytest tests/
-```
+| Variable | Default | Purpose |
+| :--- | :--- | :--- |
+| `DEMO_MODE` | `true` | When true, serves fixtures without external network calls. |
+| `OPENROUTER_API_KEY` | `""` | Server-side OpenRouter bearer key. Never sent to frontend. |
+| `OPENROUTER_MODEL_NARRATOR` | `anthropic/claude-3.5-sonnet` | Model ID for narrative generation. |
+| `OPENROUTER_MODEL_VERIFIER` | `openai/gpt-4o-mini` | Model ID for independent fact verification. |
+| `OPENROUTER_FALLBACK_MODELS` | `["google/gemini-2.0-flash-001", ...]` | Ordered fallback chain on 429/5xx. |
+| `LLM_DAILY_BUDGET_USD` | `10.0` | Maximum daily spend cap on OpenRouter. |
+| `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass API mirror endpoint. |
+| `NOMINATIM_USER_AGENT` | `IndiaTravelSafety/2.0 (...)` | Required identifying User-Agent for Nominatim OSM policy. |
+| `ALLOWED_ORIGINS` | `["*"]` | CORS origin allowlist. |
+| `REDISTRIBUTION_ALLOWED` | `true` | Licensing toggle for raw record redistribution. |

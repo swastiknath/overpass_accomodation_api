@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: india-travel-safety-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEMO_MODE=true
+      - ALLOWED_ORIGINS=*
+      - FUSION_CONFIG_PATH=config/fusion_config.yaml
+      - ADVICE_CATALOG_PATH=config/advice_catalog.yaml
+      - NEWS_KEYWORDS_PATH=config/news_keywords.yaml
+      - OVERPASS_URL=https://overpass-api.de/api/interpreter
+      - NOMINATIM_USER_AGENT=IndiaTravelSafety/2.0 (safety-research@indiatravelsafety.org)
+    volumes:
+      - ./config:/app/config:ro
+      - ./fixtures:/app/fixtures:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: india-travel-safety-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_MAP_STYLE_URL=https://demotiles.maplibre.org/style.json
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
