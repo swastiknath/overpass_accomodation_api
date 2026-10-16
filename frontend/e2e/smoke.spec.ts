@@ -6,9 +6,9 @@ test("smoke test in DEMO_MODE: search -> score visible -> hotels listed -> narra
   // 1. Navigate to main dashboard with initial search query
   await page.goto("/?q=Manali&alpha=0.7");
 
-  // 2. Verify prominent DEMO banner is visible
-  const demoBanner = page.locator("text=DEMO MODE ACTIVE");
-  await expect(demoBanner).toBeVisible();
+  // 2. Verify status banner is visible
+  const banner = page.locator("text=/LIVE DATA ACTIVE|DEMO MODE ACTIVE/");
+  await expect(banner).toBeVisible();
 
   // 3. Verify safety score is visible and within 0-100 bounds
   const scoreEl = page.locator("#overall-safety-score");

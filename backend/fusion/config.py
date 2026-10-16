@@ -40,23 +40,20 @@ _CACHE: tuple[str, FusionConfig] | None = None
 
 def load_fusion_config(config_path: str | Path | None = None) -> FusionConfig:
     global _CACHE
-    if config_path is None:
-        # Search relative to current directory or monorepo root
-        candidates = [
-            Path("config/fusion_config.yaml"),
-            Path("../config/fusion_config.yaml"),
-            Path(__file__).resolve().parent.parent.parent / "config" / "fusion_config.yaml",
-        ]
-        path = next((p for p in candidates if p.exists()), candidates[0])
-    else:
-        path = Path(config_path)
+    candidates = [
+        Path(config_path) if config_path else None,
+        Path("config/fusion_config.yaml"),
+        Path("../config/fusion_config.yaml"),
+        Path(__file__).resolve().parent.parent.parent / "config" / "fusion_config.yaml",
+        Path(__file__).resolve().parent.parent / "config" / "fusion_config.yaml",
+    ]
+    path = next((p for p in candidates if p and p.exists()), None)
+    if not path:
+        raise FileNotFoundError(f"Fusion config not found (checked: {[str(p) for p in candidates if p]})")
 
-    path_str = str(path.resolve()) if path.exists() else str(path)
+    path_str = str(path.resolve())
     if _CACHE and _CACHE[0] == path_str:
         return _CACHE[1]
-
-    if not path.exists():
-        raise FileNotFoundError(f"Fusion config not found at {path}")
 
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)

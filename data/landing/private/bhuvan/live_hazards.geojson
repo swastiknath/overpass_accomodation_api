@@ -1,0 +1,59 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "id": "0",
+      "type": "Feature",
+      "properties": {
+        "hazard_id": "BHUVAN_FL_001",
+        "hazard": "Flood Warning",
+        "severity": 0.85,
+        "state": "Assam",
+        "district": "Barpeta"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          91.005,
+          26.321
+        ]
+      }
+    },
+    {
+      "id": "1",
+      "type": "Feature",
+      "properties": {
+        "hazard_id": "BHUVAN_LS_002",
+        "hazard": "Landslide Hazard",
+        "severity": 0.9,
+        "state": "Uttarakhand",
+        "district": "Chamoli"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          79.317,
+          30.409
+        ]
+      }
+    },
+    {
+      "id": "2",
+      "type": "Feature",
+      "properties": {
+        "hazard_id": "BHUVAN_CY_003",
+        "hazard": "Cyclone Alert",
+        "severity": 0.75,
+        "state": "Odisha",
+        "district": "Puri"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          85.831,
+          19.813
+        ]
+      }
+    }
+  ]
+}

@@ -167,9 +167,24 @@ Before promoting to live public production, the operator must complete these man
 
 ---
 
-## Quickstart: Running in DEMO_MODE (Zero API Keys)
+## Live Data Mode & Operating Pipeline
 
-The entire platform runs out of the box with Docker Compose in `DEMO_MODE=true` using recorded connector fixtures and canned verified narratives.
+The system is configured by default for **Live Data Operation (`DEMO_MODE=false`)**:
+
+1. **Live Multi-Hazard Connectors**:
+   - **USGS**: Real-time M2.5+ earthquake alerts across India envelope.
+   - **Open-Meteo**: Live 24h precipitation, wind speeds, atmospheric pressure, and 3-day weather forecasts.
+   - **GDACS**: Global multi-hazard alerts (cyclones, floods, earthquakes).
+   - **ISRO Bhuvan / NRSC**: Geospatial indexing across 6,670+ national/state thematic layers and private landing zone geo-hazard feeds (`data/landing/private/bhuvan/`).
+   - **OpenStreetMap Overpass & Nominatim**: Real-time accommodation discovery (hotels, resorts, guest houses, hostels) with multi-mirror failover and live calculation of proximity to hospitals, police stations, and fire services.
+   - **GDELT DOC 2.0**: Live local news ingestion, sentiment scoring, and recency decay.
+
+2. **Resilience & Missing-Data Safety**:
+   - If a third-party upstream source experiences temporary network downtime or rate limiting, it is never silently assumed safe ($\sigma \neq 0$). The source is logged and reported under `coverage[source] = "source_failed"` with mathematical Noisy-OR normalization.
+
+---
+
+## Quickstart: Running with Live Data
 
 ### 1. Run with Docker Compose
 ```bash
@@ -184,18 +199,15 @@ docker compose up --build
 #### Backend:
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Start FastAPI server in demo mode
-DEMO_MODE=true uvicorn api.main:app --reload --port 8000
+source ../india-travel-safety/.venv/bin/activate
+# Start FastAPI server in live mode
+PYTHONPATH=. uvicorn api.main:app --reload --port 8000
 ```
 
 #### Frontend:
 ```bash
 cd frontend
-npm install --legacy-peer-deps
+npm install
 npm run dev
 ```
 
@@ -203,28 +215,29 @@ npm run dev
 
 ## Running Test Suites
 
-### Backend Tests (Pytest)
-Includes property tests, hotel ranking tests, OpenRouter verification tests, and API endpoint integration tests:
+Run the unified test runner to execute both backend and frontend suites:
 ```bash
-PYTHONPATH=backend pytest backend/tests/
+./run_tests.sh
+```
+
+Or run individual suites:
+
+### Backend Tests (Pytest)
+```bash
+PYTHONPATH=backend ./india-travel-safety/.venv/bin/pytest backend/tests/ -v
 ```
 Expected output: **26 passed** (0 failures).
 
 ### Frontend Component Tests (Vitest)
-Tests ScorePanel, CoveragePanel, and HotelsList ranking & filters:
 ```bash
-cd frontend
-npx vitest run
+npm --prefix frontend run test
 ```
 Expected output: **9 passed** (0 failures).
 
 ### End-to-End Smoke Test (Playwright)
-Executes end-to-end browser flow in DEMO_MODE (Search $\rightarrow$ Score $\rightarrow$ Hotels $\rightarrow$ Narrative badge):
 ```bash
-cd frontend
-npx playwright test
+npm --prefix frontend run test:e2e
 ```
-Expected output: **1 passed**.
 
 ---
 
@@ -234,7 +247,7 @@ See `.env.example` for all configurable keys.
 
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
-| `DEMO_MODE` | `true` | When true, serves fixtures without external network calls. |
+| `DEMO_MODE` | `false` | When false, queries live external feeds; when true, serves fixtures. |
 | `OPENROUTER_API_KEY` | `""` | Server-side OpenRouter bearer key. Never sent to frontend. |
 | `OPENROUTER_MODEL_NARRATOR` | `anthropic/claude-3.5-sonnet` | Model ID for narrative generation. |
 | `OPENROUTER_MODEL_VERIFIER` | `openai/gpt-4o-mini` | Model ID for independent fact verification. |

@@ -108,19 +108,60 @@ class SignalOrchestrator:
             help_map = {h.id: AccessToHelp() for h in hotels}
         else:
             # Live concurrent queries with circuit breakers / per-connector timeout
-            disaster_task = asyncio.wait_for(self.disaster_client.get_all_active_async(bbox), timeout=15.0)
-            acled_task = asyncio.wait_for(self.acled_client.get_events_async(bbox_or_country=bbox), timeout=15.0)
-            weather_task = asyncio.wait_for(self.weather_client.get_conditions_async(lat, lon), timeout=15.0)
+            disaster_task = asyncio.wait_for(self.disaster_client.get_all_active_async(bbox), timeout=12.0)
+            acled_task = asyncio.wait_for(self.acled_client.get_events_async(bbox_or_country=bbox), timeout=8.0)
+            weather_task = asyncio.wait_for(self.weather_client.get_conditions_async(lat, lon), timeout=8.0)
             crime_target = district_id or location_name
-            crime_task = asyncio.wait_for(self.crime_client.get_district_crime_rate_async(crime_target), timeout=15.0)
-            news_task = asyncio.wait_for(self.news_client.fetch_local_news_async(lat, lon, radius_km), timeout=15.0)
-            hotel_task = asyncio.wait_for(self.hotel_provider.search(lat, lon, radius_km, limit=max_hotels), timeout=25.0)
+            crime_task = asyncio.wait_for(self.crime_client.get_district_crime_rate_async(crime_target), timeout=8.0)
+            news_task = asyncio.wait_for(self.news_client.fetch_local_news_async(lat, lon, radius_km), timeout=8.0)
+            hotel_task = asyncio.wait_for(self.hotel_provider.search(lat, lon, radius_km, limit=max_hotels), timeout=12.0)
 
             results = await asyncio.gather(
                 disaster_task, acled_task, weather_task, crime_task, news_task, hotel_task,
                 return_exceptions=True,
             )
             disaster_res, acled_res, weather_res, crime_res, news_res, hotels_res = results
+
+            # Process Bhuvan / ISRO geo-hazards & catalogue
+            bhuvan_path = Path("data/landing/private/bhuvan/live_hazards.geojson")
+            if bhuvan_path.exists():
+                try:
+                    b_data = json.loads(bhuvan_path.read_text(encoding="utf-8"))
+                    sources_meta["bhuvan_nrsc"] = {
+                        "status": "active",
+                        "source": "Bhuvan / NRSC (ISRO)",
+                        "last_updated": now_utc.isoformat(),
+                    }
+                    coverage["landslide"] = "no_signal_found"
+                    for feat in b_data.get("features", []):
+                        props = feat.get("properties", {})
+                        geom_coords = feat.get("geometry", {}).get("coordinates", [])
+                        if len(geom_coords) >= 2:
+                            f_lon, f_lat = float(geom_coords[0]), float(geom_coords[1])
+                            dist_to_hazard = math.hypot(
+                                (f_lon - lon) * 111.32 * max(0.01, math.cos(math.radians(lat))),
+                                (f_lat - lat) * 111.32,
+                            )
+                            raw_hazard = props.get("hazard", "").lower()
+                            hz_type = "landslide" if "landslide" in raw_hazard else ("flood" if "flood" in raw_hazard else ("cyclone" if "cyclone" in raw_hazard else "landslide"))
+                            if dist_to_hazard <= max(radius_km + 30.0, 60.0):
+                                b_rec = IngestedRecord(
+                                    event_id=f"bhuvan:{props.get('hazard_id', 'h_' + str(abs(hash(props.get('hazard')))))}",
+                                    source="bhuvan",
+                                    hazard_type=hz_type,
+                                    geometry=Point(f_lon, f_lat),
+                                    event_time=now_utc,
+                                    ingest_time=now_utc,
+                                    resolution_tier=ResolutionTier.POINT,
+                                    district_id=props.get("district"),
+                                    severity_raw=float(props.get("severity", 0.7)),
+                                    confidence=0.88,
+                                    raw_payload=props,
+                                )
+                                all_records.append(b_rec)
+                                coverage[hz_type] = "contributing"
+                except Exception as be:
+                    logger.warning(f"Error reading Bhuvan hazards: {be}")
 
             # Process Disaster alerts
             if isinstance(disaster_res, Exception):

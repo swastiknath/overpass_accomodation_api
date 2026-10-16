@@ -16,4 +16,19 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
+  webServer: [
+    {
+      command: "PYTHONPATH=../backend ../india-travel-safety/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000",
+      port: 8000,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+    {
+      command: "npm run dev",
+      port: 3000,
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+  ],
 });
+

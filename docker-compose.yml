@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DEMO_MODE=true
+      - DEMO_MODE=false
       - ALLOWED_ORIGINS=*
       - FUSION_CONFIG_PATH=config/fusion_config.yaml
       - ADVICE_CATALOG_PATH=config/advice_catalog.yaml
