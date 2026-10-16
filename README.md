@@ -194,21 +194,24 @@ docker compose up --build
 - **FastAPI Documentation**: http://localhost:8000/docs
 - **Health Endpoint**: http://localhost:8000/v1/health
 
-### 2. Run Locally (Development Mode)
+### 2. Run Locally (One-Command Scripts)
 
-#### Backend:
+#### Terminal 1 (Backend):
 ```bash
-cd backend
-source ../india-travel-safety/.venv/bin/activate
-# Start FastAPI server in live mode
-PYTHONPATH=. uvicorn api.main:app --reload --port 8000
+./start_backend.sh
+```
+Or manually:
+```bash
+PYTHONPATH=backend ./india-travel-safety/.venv/bin/uvicorn api.main:app --port 8000 --reload
 ```
 
-#### Frontend:
+#### Terminal 2 (Frontend):
 ```bash
-cd frontend
-npm install
-npm run dev
+./start_frontend.sh
+```
+Or manually:
+```bash
+npm --prefix frontend run dev
 ```
 
 ---
