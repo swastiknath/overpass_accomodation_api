@@ -1,0 +1,113 @@
+# Safety-relevant keyword dictionary and classification taxonomy for India travel safety news ingestion
+
+safety_keywords:
+  - protest
+  - unrest
+  - flood
+  - landslide
+  - accident
+  - curfew
+  - violence
+  - closure
+  - strike
+  - riot
+  - bandh
+  - hartal
+  - clash
+  - arson
+  - blockage
+  - derailment
+  - earthquake
+  - cyclone
+  - fire
+  - explosion
+  - stampede
+  - shooting
+  - robbery
+  - crime
+
+categories:
+  protest:
+    - protest
+    - rally
+    - demonstration
+    - strike
+    - bandh
+    - hartal
+    - agitation
+    - sit-in
+    - morcha
+    - gherao
+    - dharna
+    - blockade
+    - road block
+    - rail roko
+
+  civil_unrest:
+    - riot
+    - riots
+    - violence
+    - unrest
+    - curfew
+    - clashes
+    - clash
+    - mob
+    - arson
+    - stone pelting
+    - lathicharge
+    - section 144
+    - communal tension
+    - tear gas
+
+  accident:
+    - accident
+    - crash
+    - collision
+    - derailment
+    - derailed
+    - capsize
+    - overturned
+    - mishap
+    - pile-up
+    - stampede
+    - bus crash
+    - train crash
+
+  natural_disaster:
+    - flood
+    - flooding
+    - inundated
+    - landslide
+    - landslip
+    - mudslide
+    - earthquake
+    - tremors
+    - cyclone
+    - heavy rain
+    - cloudburst
+    - waterlogging
+    - avalanche
+    - drought
+    - heatwave
+
+  fire:
+    - fire
+    - blaze
+    - inferno
+    - explosion
+    - cylinder blast
+    - chemical leak
+    - toxic gas
+
+  crime:
+    - murder
+    - robbery
+    - kidnapping
+    - abduction
+    - assault
+    - stabbing
+    - shooting
+    - extortion
+    - theft
+    - gang
+    - mugging

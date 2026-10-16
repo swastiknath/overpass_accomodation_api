@@ -1,0 +1,148 @@
+# India Travel Safety — Fusion Scoring Configuration
+# All numeric weights and thresholds below are expert-assigned priors, to be calibrated against empirical incident data.
+
+config_version: "2026.1.0-alpha"
+
+# Mapping of hazard type to risk layer type ("static" or "dynamic")
+hazard_layers:
+  landslide: "static"
+  flood_susceptibility: "static"
+  crime: "static"
+  terrain: "static"
+  flood: "dynamic"
+  cyclone: "dynamic"
+  earthquake: "dynamic"
+  fire: "dynamic"
+  conflict: "dynamic"
+  weather: "dynamic"
+  news: "dynamic"
+
+# Base weights per hazard type (sum does not need to equal 1 because aggregation uses noisy-OR)
+base_weights:
+  landslide: 0.75          # expert-assigned prior, to be calibrated
+  flood_susceptibility: 0.70 # expert-assigned prior, to be calibrated
+  crime: 0.60              # expert-assigned prior, to be calibrated
+  terrain: 0.40            # expert-assigned prior, to be calibrated
+  flood: 0.85              # expert-assigned prior, to be calibrated
+  cyclone: 0.90            # expert-assigned prior, to be calibrated
+  earthquake: 0.85         # expert-assigned prior, to be calibrated
+  fire: 0.70               # expert-assigned prior, to be calibrated
+  conflict: 0.80           # expert-assigned prior, to be calibrated
+  weather: 0.65            # expert-assigned prior, to be calibrated
+  news: 0.50               # expert-assigned prior, to be calibrated
+
+# Default confidence factor c_i when source does not explicitly report confidence
+source_confidence_defaults:
+  bhuvan: 0.85             # expert-assigned prior, to be calibrated
+  gdacs: 0.90              # expert-assigned prior, to be calibrated
+  usgs: 0.95               # expert-assigned prior, to be calibrated
+  firms: 0.80              # expert-assigned prior, to be calibrated
+  acled: 0.90              # expert-assigned prior, to be calibrated
+  crime_ncrb: 0.75         # expert-assigned prior, to be calibrated
+  open_meteo: 0.85         # expert-assigned prior, to be calibrated
+  imd: 0.90                # expert-assigned prior, to be calibrated
+  gdelt: 0.65              # expert-assigned prior, to be calibrated
+  osm: 0.80                # expert-assigned prior, to be calibrated
+
+# Resolution tier multiplier d(resolution_tier)
+resolution_multipliers:
+  point: 1.0               # expert-assigned prior, to be calibrated
+  polygon: 0.85            # expert-assigned prior, to be calibrated
+  district: 0.60           # expert-assigned prior, to be calibrated
+
+# Gaussian spatial kernel standard deviation s (in kilometers) for K(d) = exp(-d^2 / (2 * s^2))
+# District resolution signals use K = 1 inside district, 0 outside.
+spatial_kernel_sigma_km:
+  landslide: 5.0           # expert-assigned prior, to be calibrated
+  flood_susceptibility: 8.0 # expert-assigned prior, to be calibrated
+  flood: 15.0              # expert-assigned prior, to be calibrated
+  cyclone: 80.0            # expert-assigned prior, to be calibrated
+  earthquake: 50.0         # expert-assigned prior, to be calibrated
+  fire: 5.0                # expert-assigned prior, to be calibrated
+  conflict: 10.0           # expert-assigned prior, to be calibrated
+  weather: 25.0            # expert-assigned prior, to be calibrated
+  news: 15.0               # expert-assigned prior, to be calibrated
+  crime: 20.0              # expert-assigned prior, to be calibrated
+  terrain: 10.0            # expert-assigned prior, to be calibrated
+
+# Temporal decay half-life in hours g_hazard(age) = 2^(-age / half_life_hours)
+# Static layers use null (no decay: g = 1.0)
+temporal_decay_half_life_hours:
+  landslide: null          # static layer, no temporal decay
+  flood_susceptibility: null # static layer, no temporal decay
+  crime: null              # static baseline, no temporal decay
+  terrain: null            # static baseline, no temporal decay
+  flood: 24.0              # expert-assigned prior, to be calibrated (1 day)
+  cyclone: 18.0            # expert-assigned prior, to be calibrated
+  earthquake: 48.0         # expert-assigned prior, to be calibrated (2 days)
+  fire: 12.0               # expert-assigned prior, to be calibrated (12 hours)
+  conflict: 72.0           # expert-assigned prior, to be calibrated (3 days for general protest/violence)
+  weather: 12.0            # expert-assigned prior, to be calibrated (or warning expiry)
+  news: 36.0               # expert-assigned prior, to be calibrated (1.5 days)
+
+# Conflict specific event-type temporal decay and multipliers
+conflict_decay_by_event_type:
+  protest: 48.0            # expert-assigned prior, to be calibrated (2 days)
+  riot: 72.0               # expert-assigned prior, to be calibrated (3 days)
+  armed_clash: 336.0       # expert-assigned prior, to be calibrated (2 weeks)
+  violence_against_civilians: 168.0 # expert-assigned prior, to be calibrated (1 week)
+
+# Specific normalization parameters
+normalization:
+  flood_gdacs_anchors:
+    green: 0.20            # expert-assigned prior, to be calibrated
+    orange: 0.55           # expert-assigned prior, to be calibrated
+    red: 0.90              # expert-assigned prior, to be calibrated
+  cyclone_gdacs_anchors:
+    green: 0.20            # expert-assigned prior, to be calibrated
+    orange: 0.55           # expert-assigned prior, to be calibrated
+    red: 0.90              # expert-assigned prior, to be calibrated
+  earthquake_sigmoid:
+    inflection_magnitude: 5.0 # expert-assigned prior, to be calibrated
+    steepness_k: 1.2         # expert-assigned prior, to be calibrated
+  conflict_fatalities_lambda: 0.25 # expert-assigned prior, to be calibrated
+  conflict_event_multiplier:
+    protest: 0.35          # expert-assigned prior, to be calibrated
+    riot: 0.65             # expert-assigned prior, to be calibrated
+    armed_clash: 1.00      # expert-assigned prior, to be calibrated
+    violence_against_civilians: 0.90 # expert-assigned prior, to be calibrated
+  weather_thresholds:
+    rain_heavy_mm: 50.0    # expert-assigned prior, to be calibrated
+    rain_extreme_mm: 120.0 # expert-assigned prior, to be calibrated
+    wind_high_kmh: 40.0    # expert-assigned prior, to be calibrated
+    wind_extreme_kmh: 80.0 # expert-assigned prior, to be calibrated
+  news:
+    count_norm: 10.0       # expert-assigned prior, to be calibrated
+
+# Qualitative Safety Score Bands (score is 0-100, where 100 is safest)
+score_bands:
+  - min: 80
+    max: 100
+    label: "Low Risk"
+    code: "low"
+    description: "Conditions appear stable with no major active severe hazard signals detected."
+  - min: 65
+    max: 79
+    label: "Moderate Risk"
+    code: "moderate"
+    description: "Minor or localized weather/civil alerts present. Exercise standard travel precautions."
+  - min: 50
+    max: 64
+    label: "Elevated Risk"
+    code: "elevated"
+    description: "Active hazard alerts or moderate crime/conflict indicators. Situational awareness recommended."
+  - min: 30
+    max: 49
+    label: "High Risk"
+    code: "high"
+    description: "Significant active hazard (severe storm, flood advisory, or violent disruption). Avoid non-essential movements."
+  - min: 0
+    max: 29
+    label: "Severe Risk"
+    code: "severe"
+    description: "Critical emergency or major disaster in effect. Follow official instructions and shelter in place."
+
+# Quality and ranking parameters
+hotel_ranking:
+  default_alpha: 0.7       # safety weight (0.7 safety, 0.3 quality)
+  same_area_epsilon: 2.5   # score difference below which hotels are considered indistinguishable on safety

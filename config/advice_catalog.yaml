@@ -1,0 +1,125 @@
+# Curated Safety Advice Catalog
+# Maps hazard_type -> actionable tips and verified official emergency authorities
+# Review status: PLACEHOLDER — awaiting review and sign-off by regional emergency specialist
+
+landslide:
+  hazard_name: "Landslide Risk"
+  tips:
+    - "Stay alert for sudden increases or decreases in stream flow and sudden mudflows."
+    - "Avoid steep mountain roads and valleys during or immediately after torrential rainfall."
+    - "If trapped, curl into a tight ball and protect your head."
+  authorities:
+    - name: "National Disaster Management Authority (NDMA)"
+      url: "https://ndma.gov.in"
+      helpline: "1078"
+    - name: "Geological Survey of India (GSI)"
+      url: "https://www.gsi.gov.in"
+      helpline: "112"
+
+flood:
+  hazard_name: "Flood / Waterlogging Alert"
+  tips:
+    - "Do not attempt to walk, swim, or drive through flowing water or waterlogged underpasses."
+    - "Move to higher ground if floodwaters begin rising around your accommodation."
+    - "Keep emergency kits and power banks sealed in waterproof bags."
+  authorities:
+    - name: "State Disaster Management Authority (SDMA)"
+      url: "https://ndma.gov.in/State-Disaster-Management-Authorities"
+      helpline: "1070"
+    - name: "Central Water Commission (CWC)"
+      url: "http://cwc.gov.in"
+      helpline: "112"
+
+cyclone:
+  hazard_name: "Cyclone Advisory"
+  tips:
+    - "Stay indoors away from windows; keep doors securely closed."
+    - "Unplug electrical appliances and turn off gas supply if advised."
+    - "Keep battery-powered radios and flashlights ready; monitor IMD cyclone bulletins."
+  authorities:
+    - name: "India Meteorological Department (IMD Cyclone Warning)"
+      url: "https://mausam.imd.gov.in"
+      helpline: "1800-180-1717"
+    - name: "NDMA Control Room"
+      url: "https://ndma.gov.in"
+      helpline: "1078"
+
+earthquake:
+  hazard_name: "Earthquake Activity"
+  tips:
+    - "Drop, Cover, and Hold on under sturdy furniture or against an interior wall."
+    - "If outside, move away from buildings, streetlights, and utility wires."
+    - "Expect aftershocks; do not use elevators immediately following a tremor."
+  authorities:
+    - name: "National Centre for Seismology (NCS)"
+      url: "https://seismo.gov.in"
+      helpline: "112"
+    - name: "NDMA Control Room"
+      url: "https://ndma.gov.in"
+      helpline: "1078"
+
+fire:
+  hazard_name: "Wildfire / Thermal Anomaly"
+  tips:
+    - "Stay upwind of active forest or agricultural fires; close all hotel windows."
+    - "Wear N95 masks if smoke and particulate matter are visible."
+    - "Know hotel emergency evacuation exits and assembly points."
+  authorities:
+    - name: "Fire & Emergency Services"
+      url: "https://ndma.gov.in"
+      helpline: "101"
+    - name: "Unified Emergency Response Support System (ERSS)"
+      url: "https://112.gov.in"
+      helpline: "112"
+
+conflict:
+  hazard_name: "Civil Unrest / Protest Activity"
+  tips:
+    - "Avoid large public gatherings, protest rallies, and unverified crowd congregations."
+    - "Monitor local news and heed advisory curfews or transit halts."
+    - "Keep your identity documents, hotel address, and embassy/consular contact handy."
+  authorities:
+    - name: "Local Police Control Room"
+      url: "https://112.gov.in"
+      helpline: "100 or 112"
+    - name: "Tourist Police Assistance"
+      url: "https://tourism.gov.in"
+      helpline: "1363"
+
+crime:
+  hazard_name: "District Crime Baseline"
+  tips:
+    - "Stick to well-lit, populated thoroughfares during late evening and night hours."
+    - "Use registered and authorized transit services or app-based rides."
+    - "Keep valuables concealed and do not display large sums of cash or jewellery."
+  authorities:
+    - name: "Emergency Response Support System (ERSS)"
+      url: "https://112.gov.in"
+      helpline: "112"
+    - name: "National Women Helpline"
+      url: "https://wcd.nic.in"
+      helpline: "1091 / 181"
+
+weather:
+  hazard_name: "Adverse Weather Warning"
+  tips:
+    - "Check real-time weather forecasts before venturing onto highways or mountain passes."
+    - "Carry suitable rain gear, thermal insulation, and charged communication devices."
+    - "Allow extra transit time due to waterlogged roads or reduced visibility."
+  authorities:
+    - name: "India Meteorological Department (IMD)"
+      url: "https://mausam.imd.gov.in"
+      helpline: "1800-180-1717"
+
+news:
+  hazard_name: "Local Civil & News Signals"
+  tips:
+    - "Check verified news outlets for local road closures, transport strikes, or municipal disruptions."
+    - "Consult your hotel concierge or local hosts about neighborhood ground conditions."
+  authorities:
+    - name: "National Highway Authority Helpline"
+      url: "https://nhai.gov.in"
+      helpline: "1033"
+    - name: "Unified Emergency Helpline"
+      url: "https://112.gov.in"
+      helpline: "112"
