@@ -1,0 +1,11 @@
+{
+  "district": "Kullu",
+  "state": "Himachal Pradesh",
+  "year": 2022,
+  "ipc_crimes_total": 842,
+  "crime_rate_per_lakh": 178.5,
+  "percentile_rank": 0.28,
+  "violent_crime_rate": 22.4,
+  "property_crime_rate": 45.1,
+  "source": "data.gov.in / National Crime Records Bureau (NCRB)"
+}

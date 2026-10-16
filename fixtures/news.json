@@ -1,0 +1,25 @@
+{
+  "total_articles": 3,
+  "classifier_confidence": 0.85,
+  "tone_severity": 0.35,
+  "recency_decay": 0.92,
+  "district": "Kullu",
+  "articles": [
+    {
+      "url": "https://example.com/news/kullu-traffic-advisory",
+      "title": "Traffic diversion announced on Manali bypass due to culvert repair",
+      "seendate": "20261015T140000Z",
+      "domain": "tribuneindia.com",
+      "category": "accident",
+      "tone": -1.8
+    },
+    {
+      "url": "https://example.com/news/weather-himachal",
+      "title": "Himachal authorities issue light rain advisory for upper reaches",
+      "seendate": "20261015T093000Z",
+      "domain": "hindustantimes.com",
+      "category": "natural_disaster",
+      "tone": -0.8
+    }
+  ]
+}

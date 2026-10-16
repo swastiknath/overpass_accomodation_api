@@ -1,0 +1,40 @@
+{
+  "status": 200,
+  "success": true,
+  "count": 1,
+  "data": [
+    {
+      "data_id": 9988771,
+      "iso": 356,
+      "event_id_cnty": "IND99887",
+      "event_date": "2026-10-14",
+      "year": 2026,
+      "time_precision": 1,
+      "event_type": "Protests",
+      "sub_event_type": "Peaceful protest",
+      "actor1": "Taxi Operators Association",
+      "assoc_actor_1": "",
+      "inter1": 6,
+      "actor2": "",
+      "assoc_actor_2": "",
+      "inter2": 0,
+      "interaction": 60,
+      "civilian_targeting": "",
+      "iso3": "IND",
+      "country": "India",
+      "admin1": "Himachal Pradesh",
+      "admin2": "Kullu",
+      "admin3": "Manali",
+      "location": "Manali Mall Road",
+      "latitude": "32.2396",
+      "longitude": "77.1887",
+      "geo_precision": 1,
+      "source": "The Tribune (India)",
+      "source_scale": "National",
+      "notes": "Commercial taxi operators staged a peaceful sit-in demonstration protesting tourist permit quotas outside the SDM office.",
+      "fatalities": 0,
+      "tags": "",
+      "timestamp": 1728900000
+    }
+  ]
+}

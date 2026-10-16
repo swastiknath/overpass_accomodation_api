@@ -1,0 +1,41 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "mag": 3.8,
+        "place": "18 km ESE of Kullu, India",
+        "time": 1729000000000,
+        "updated": 1729005000000,
+        "tz": null,
+        "url": "https://earthquake.usgs.gov/earthquakes/event/us6000test",
+        "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000test.geojson",
+        "felt": 12,
+        "cdi": 2.5,
+        "mmi": 3.1,
+        "alert": null,
+        "status": "reviewed",
+        "tsunami": 0,
+        "sig": 180,
+        "net": "us",
+        "code": "6000test",
+        "ids": ",us6000test,",
+        "sources": ",us,",
+        "types": ",origin,phase-data,",
+        "nst": 28,
+        "dmin": 1.2,
+        "rms": 0.45,
+        "gap": 85,
+        "magType": "mb",
+        "type": "earthquake",
+        "title": "M 3.8 - 18 km ESE of Kullu, India"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [77.3000, 32.1000, 10.0]
+      },
+      "id": "us6000test"
+    }
+  ]
+}

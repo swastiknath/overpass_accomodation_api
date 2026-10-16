@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [77.1950, 32.2450]
+      },
+      "properties": {
+        "eventtype": "FL",
+        "eventid": "gdacs_fl_1001",
+        "alertlevel": "Orange",
+        "eventname": "Beas River Elevated Monsoon Flow Advisory",
+        "htmldescription": "Moderate water discharge and localized riverbank erosion alert along Upper Beas catchment.",
+        "fromdate": "2026-10-15T08:00:00Z",
+        "todate": "2026-10-17T18:00:00Z",
+        "country": "India"
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "manali": [
+    {
+      "place_id": 1001,
+      "osm_type": "relation",
+      "osm_id": 123456,
+      "lat": "32.2396",
+      "lon": "77.1887",
+      "display_name": "Manali, Kullu, Himachal Pradesh, India",
+      "type": "town",
+      "importance": 0.75,
+      "boundingbox": ["32.21", "32.27", "77.15", "77.22"],
+      "address": {
+        "town": "Manali",
+        "district": "Kullu",
+        "state": "Himachal Pradesh",
+        "country": "India",
+        "country_code": "in"
+      }
+    }
+  ],
+  "delhi": [
+    {
+      "place_id": 1002,
+      "osm_type": "relation",
+      "osm_id": 987654,
+      "lat": "28.6139",
+      "lon": "77.2090",
+      "display_name": "New Delhi, Delhi, India",
+      "type": "city",
+      "importance": 0.95,
+      "boundingbox": ["28.40", "28.88", "76.84", "77.35"],
+      "address": {
+        "city": "New Delhi",
+        "district": "New Delhi",
+        "state": "Delhi",
+        "country": "India",
+        "country_code": "in"
+      }
+    }
+  ]
+}
