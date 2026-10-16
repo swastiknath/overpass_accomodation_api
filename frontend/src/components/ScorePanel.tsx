@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, AlertOctagon } from "lucide-react";
+import { ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, AlertOctagon, Sparkles } from "lucide-react";
 import { SearchReport } from "@/types";
 
 interface ScorePanelProps {
@@ -74,7 +74,7 @@ export default function ScorePanel({ report }: ScorePanelProps) {
   return (
     <section
       aria-label="Safety Score Overview"
-      className="bg-slate-900/90 rounded-2xl p-5 border border-slate-800 shadow-xl"
+      className="bg-black rounded-2xl p-5 border border-zinc-800 shadow-2xl"
     >
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
         {/* Main Score Section */}
@@ -86,7 +86,7 @@ export default function ScorePanel({ report }: ScorePanelProps) {
                 cx="50"
                 cy="50"
                 r="42"
-                className="stroke-slate-800"
+                className="stroke-zinc-800"
                 strokeWidth="9"
                 fill="transparent"
               />
@@ -106,7 +106,7 @@ export default function ScorePanel({ report }: ScorePanelProps) {
               <span className="text-3xl font-extrabold text-white tracking-tighter" id="overall-safety-score">
                 {safety_score}
               </span>
-              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+              <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">
                 out of 100
               </span>
             </div>
@@ -128,11 +128,27 @@ export default function ScorePanel({ report }: ScorePanelProps) {
               >
                 {confBadge.label}
               </span>
+              {report.safety_decision && (
+                <span
+                  id="ai-decision-badge"
+                  title={`Assessed by ${report.safety_decision.model}`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                    report.safety_decision.choice === "safe"
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                      : report.safety_decision.choice === "caution"
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+                      : "bg-rose-500/20 text-rose-300 border-rose-500/50"
+                  }`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                  AI Decision: {report.safety_decision.choice.toUpperCase()} ({Math.round(report.safety_decision.confidence * 100)}%)
+                </span>
+              )}
             </div>
             <h2 className="text-lg font-bold text-white tracking-tight">
               {location.display_name.split(",")[0]}
             </h2>
-            <p className="text-xs text-slate-300 max-w-sm leading-relaxed">
+            <p className="text-xs text-zinc-300 max-w-sm leading-relaxed">
               {band.description}
             </p>
           </div>
@@ -140,27 +156,27 @@ export default function ScorePanel({ report }: ScorePanelProps) {
 
         {/* Sub-Scores (Static vs Dynamic) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:max-w-md">
-          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-slate-300">Static Terrain & Baseline</span>
-              <span className="text-xs font-bold text-white bg-slate-700/60 px-2 py-0.5 rounded">
+          <div className="bg-gradient-to-b from-zinc-900/40 via-zinc-950 to-zinc-950 p-4 rounded-xl border border-zinc-800 border-t-2 border-t-cyan-500/80 shadow-lg hover:border-zinc-700 transition">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-zinc-200">Static Terrain & Baseline</span>
+              <span className="text-xs font-bold text-white bg-zinc-900 border border-zinc-700/80 px-2 py-0.5 rounded font-mono">
                 Risk: {Math.round(S_static * 100)}%
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-normal">
-              Susceptibility models, slope geology, and multi-year district crime baselines.
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Susceptibility models, slope geology, and multi-year regional crime baselines.
             </p>
           </div>
 
-          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-slate-300">Live & Dynamic Hazards</span>
-              <span className="text-xs font-bold text-white bg-slate-700/60 px-2 py-0.5 rounded">
+          <div className="bg-gradient-to-b from-zinc-900/40 via-zinc-950 to-zinc-950 p-4 rounded-xl border border-zinc-800 border-t-2 border-t-amber-500/80 shadow-lg hover:border-zinc-700 transition">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-zinc-200">Live & Dynamic Hazards</span>
+              <span className="text-xs font-bold text-white bg-zinc-900 border border-zinc-700/80 px-2 py-0.5 rounded font-mono">
                 Risk: {Math.round(S_dynamic * 100)}%
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-normal">
-              Real-time flood/cyclone alerts (GDACS), seismic feeds (USGS), NASA FIRMS, and weather.
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Real-time flood/cyclone alerts (GDACS), seismic feeds (USGS), NASA FIRMS fires, and weather.
             </p>
           </div>
         </div>

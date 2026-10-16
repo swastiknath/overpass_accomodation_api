@@ -14,7 +14,7 @@ class NarratorKeyDriver(BaseModel):
 
 class NarratorOutput(BaseModel):
     headline: str
-    summary: str = Field(..., max_length=1000)
+    summary: str = Field(..., max_length=4000)
     key_drivers: list[NarratorKeyDriver]
     caveats: list[str] = Field(default_factory=list)
     hotel_comparison: str
@@ -38,10 +38,18 @@ class VerifierOutput(BaseModel):
     unsupported_claims: list[str] = Field(default_factory=list)
 
 
+class DecisionOutput(BaseModel):
+    choice: str  # safe, caution, unsafe
+    confidence: float
+    probabilities: dict[str, float] = Field(default_factory=dict)
+    model: str = "inception/mercury-decide:free"
+
+
 class NarrativeResult(BaseModel):
     narrative_status: Literal["verified", "unverified", "fallback_template", "unavailable"]
     narrative: NarratorOutput
     curated_advice: list[CuratedAdviceItem]
+    decision: DecisionOutput | None = None
     verification_details: dict[str, Any] = Field(default_factory=dict)
     model_used: str | None = None
     cached: bool = False

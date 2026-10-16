@@ -6,7 +6,7 @@
   "district": "Kullu",
   "articles": [
     {
-      "url": "https://example.com/news/kullu-traffic-advisory",
+      "url": "https://www.tribuneindia.com/news/himachal/traffic-diversion-announced-on-manali-bypass-due-to-culvert-repair",
       "title": "Traffic diversion announced on Manali bypass due to culvert repair",
       "seendate": "20261015T140000Z",
       "domain": "tribuneindia.com",
@@ -14,7 +14,7 @@
       "tone": -1.8
     },
     {
-      "url": "https://example.com/news/weather-himachal",
+      "url": "https://www.hindustantimes.com/india-news/himachal-authorities-issue-light-rain-advisory-for-upper-reaches",
       "title": "Himachal authorities issue light rain advisory for upper reaches",
       "seendate": "20261015T093000Z",
       "domain": "hindustantimes.com",

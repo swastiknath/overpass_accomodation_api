@@ -62,8 +62,8 @@ class NominatimGeocoder(GeocoderBase):
         if not clean_q:
             return []
 
-        # Check demo mode / fixtures first
-        if self.settings.demo_mode or clean_q.lower() in ("manali", "delhi", "new delhi"):
+        # Check demo mode fixtures first
+        if self.settings.demo_mode:
             fixture_candidates = self._load_fixture_candidates(clean_q)
             if fixture_candidates:
                 return fixture_candidates[:limit]
@@ -83,14 +83,21 @@ class NominatimGeocoder(GeocoderBase):
             self._last_request_time = time.time()
 
             try:
-                headers = {"User-Agent": self.user_agent}
-                params = {
+                headers = {
+                    "User-Agent": self.user_agent,
+                    "Accept-Language": "en, en-US;q=0.9",
+                }
+                params: dict[str, Any] = {
                     "q": clean_q,
                     "format": "jsonv2",
                     "addressdetails": 1,
-                    "countrycodes": "in",
+                    "namedetails": 1,
+                    "accept-language": "en",
                     "limit": limit,
                 }
+                if self.settings.nominatim_country_codes:
+                    params["countrycodes"] = self.settings.nominatim_country_codes
+
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.get(f"{self.base_url}/search", params=params, headers=headers)
                     if resp.status_code == 200:
@@ -136,9 +143,8 @@ class NominatimGeocoder(GeocoderBase):
                 h3_res = snap_to_h3({"type": "Point", "coordinates": [lon, lat]}, resolution=7)
                 h3_cell = h3_res[0] if h3_res else None
 
-                in_india = is_coordinate_in_india(lat, lon) and (
-                    addr.get("country_code", "in").lower() == "in"
-                )
+                country_code = addr.get("country_code", "").lower()
+                in_india = is_coordinate_in_india(lat, lon) and (country_code == "in")
 
                 candidate = GeocodeCandidate(
                     display_name=it.get("display_name", ""),
@@ -148,7 +154,7 @@ class NominatimGeocoder(GeocoderBase):
                     type=it.get("type", "place"),
                     state=state,
                     district=district,
-                    country=addr.get("country", "India"),
+                    country=addr.get("country") or ("India" if in_india else "International"),
                     is_in_india=in_india,
                     h3_cell=h3_cell,
                 )

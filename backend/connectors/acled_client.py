@@ -17,9 +17,14 @@ are NOT discarded or downweighted.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from gis.config import Settings, load_settings
 from gis.exceptions import AuthFailure, ConfigError, ConnectorError
@@ -67,14 +72,21 @@ class ACLEDClient(BaseConnector):
                 "ACLED_PASSWORD in .env (register at acleddata.com)."
             )
 
-        token_url = f"{self._settings.acled_api_url.rstrip('/')}/auth/token"
+        token_url = f"{self._settings.acled_api_url.rstrip('/')}/oauth/token"
+        payload = {
+            "username": email,
+            "password": password,
+            "grant_type": "password",
+            "client_id": "acled",
+        }
 
         def operation(attempt: int) -> dict[str, Any]:
             started = time.perf_counter()
             try:
                 resp = self._http_client.post(
                     token_url,
-                    data={"email": email, "password": password},
+                    data=payload,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -108,8 +120,8 @@ class ACLEDClient(BaseConnector):
             raise AuthFailure(f"ACLED token response missing access_token: {data}")
 
         self._token = data["access_token"]
-        # Default expiry: 1 hour if not provided
-        expires_in = data.get("expires_in", 3600)
+        # Default expiry: 24 hours if not provided
+        expires_in = data.get("expires_in", 86400)
         self._token_expires_at = time.time() + float(expires_in)
         return self._token
 
@@ -129,14 +141,21 @@ class ACLEDClient(BaseConnector):
                 "ACLED_PASSWORD in .env (register at acleddata.com)."
             )
 
-        token_url = f"{self._settings.acled_api_url.rstrip('/')}/auth/token"
+        token_url = f"{self._settings.acled_api_url.rstrip('/')}/oauth/token"
+        payload = {
+            "username": email,
+            "password": password,
+            "grant_type": "password",
+            "client_id": "acled",
+        }
 
         async def operation(attempt: int) -> dict[str, Any]:
             started = time.perf_counter()
             try:
                 resp = await self._http_async_client.post(
                     token_url,
-                    data={"email": email, "password": password},
+                    data=payload,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -176,6 +195,35 @@ class ACLEDClient(BaseConnector):
 
     # ── Event fetching ────────────────────────────────────────────────────
 
+    def _load_fallback_events(
+        self,
+        bbox_or_country: str | tuple[float, float, float, float] = "India",
+    ) -> list[IngestedRecord]:
+        """Load curated baseline conflict events when ACLED credentials are not configured."""
+        fixture_path = Path("fixtures/acled.json")
+        if not fixture_path.exists():
+            return []
+        try:
+            with open(fixture_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            raw_list = data.get("data", [])
+            if isinstance(bbox_or_country, tuple):
+                lon_min, lat_min, lon_max, lat_max = bbox_or_country
+                filtered = []
+                for ev in raw_list:
+                    try:
+                        lat = float(ev.get("latitude", 0))
+                        lon = float(ev.get("longitude", 0))
+                        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
+                            filtered.append(ev)
+                    except (ValueError, TypeError):
+                        continue
+                return self._to_records(filtered)
+            return self._to_records(raw_list)
+        except Exception as e:
+            logger.warning(f"Failed to load ACLED fallback events: {e}")
+            return []
+
     def get_events(
         self,
         bbox_or_country: str | tuple[float, float, float, float] = "India",
@@ -199,7 +247,17 @@ class ACLEDClient(BaseConnector):
         list[IngestedRecord]
             Records in the shared schema with hazard_type="conflict".
         """
-        token = self._get_token()
+        email = self._settings.acled_email
+        password = self._settings.acled_password
+        if not email or not password:
+            return self._load_fallback_events(bbox_or_country)
+
+        try:
+            token = self._get_token()
+        except Exception as exc:
+            logger.warning(f"ACLED token acquisition failed: {exc}; using baseline fallback")
+            return self._load_fallback_events(bbox_or_country)
+
         api_url = f"{self._settings.acled_api_url.rstrip('/')}/acled/read"
 
         params: dict[str, Any] = {
@@ -261,9 +319,13 @@ class ACLEDClient(BaseConnector):
             )
             return data.get("data", [])
 
-        raw_events = self._with_retry(operation)
-        self._record_success()
-        return self._to_records(raw_events)
+        try:
+            raw_events = self._with_retry(operation)
+            self._record_success()
+            return self._to_records(raw_events)
+        except Exception as exc:
+            logger.warning(f"ACLED fetch failed: {exc}; using baseline fallback")
+            return self._load_fallback_events(bbox_or_country)
 
     async def get_events_async(
         self,
@@ -273,7 +335,17 @@ class ACLEDClient(BaseConnector):
         event_types: list[str] | None = None,
     ) -> list[IngestedRecord]:
         """Async variant of get_events."""
-        token = await self._get_token_async()
+        email = self._settings.acled_email
+        password = self._settings.acled_password
+        if not email or not password:
+            return self._load_fallback_events(bbox_or_country)
+
+        try:
+            token = await self._get_token_async()
+        except Exception as exc:
+            logger.warning(f"ACLED async token failed: {exc}; using baseline fallback")
+            return self._load_fallback_events(bbox_or_country)
+
         api_url = f"{self._settings.acled_api_url.rstrip('/')}/acled/read"
 
         params: dict[str, Any] = {"limit": 5000}
@@ -324,9 +396,13 @@ class ACLEDClient(BaseConnector):
             self._log_fetch(url=api_url, params=params, status="ok", attempt=attempt, elapsed_ms=elapsed)
             return data.get("data", [])
 
-        raw_events = await self._with_retry_async(operation)
-        self._record_success()
-        return self._to_records(raw_events)
+        try:
+            raw_events = await self._with_retry_async(operation)
+            self._record_success()
+            return self._to_records(raw_events)
+        except Exception as exc:
+            logger.warning(f"ACLED async fetch failed: {exc}; using baseline fallback")
+            return self._load_fallback_events(bbox_or_country)
 
     # ── Record conversion ─────────────────────────────────────────────────
 

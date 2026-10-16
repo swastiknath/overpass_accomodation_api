@@ -111,3 +111,47 @@ categories:
     - theft
     - gang
     - mugging
+
+  socio_political:
+    - politics
+    - political
+    - government
+    - administration
+    - parliament
+    - election
+    - governor
+    - minister
+    - diplomatic
+    - diplomacy
+    - sanctions
+    - treaty
+    - policy
+    - civil rights
+    - human rights
+    - municipal
+    - council
+    - mayor
+    - judiciary
+    - legislation
+    - public order
+    - reform
+    - bilateral
+
+  security:
+    - security
+    - military
+    - defense
+    - forces
+    - patrol
+    - border
+    - iaea
+    - uranium
+    - nuclear
+    - missile
+    - drone
+    - airstrike
+    - air defense
+    - intercept
+    - armed
+    - intelligence
+

@@ -8,16 +8,15 @@ export default function DemoBanner({ show }: { show: boolean }) {
     return (
       <div
         role="alert"
-        className="bg-gradient-to-r from-amber-600/90 via-orange-600/90 to-amber-700/90 text-white px-4 py-2.5 shadow-md flex items-center justify-between text-xs sm:text-sm font-medium border-b border-amber-400/30"
+        className="bg-amber-950/25 backdrop-blur-xl text-amber-200/90 px-4 py-1.5 flex items-center justify-between text-xs font-normal border-b border-amber-500/20 shadow-sm"
       >
         <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-200 animate-pulse" />
-          <span>
-            <strong className="font-semibold uppercase tracking-wider bg-amber-900/60 px-1.5 py-0.5 rounded mr-1">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300 animate-pulse" />
+          <span className="text-[11px] sm:text-xs text-amber-200/90">
+            <strong className="font-semibold uppercase tracking-wider bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full mr-1.5 border border-amber-500/25 text-[10px]">
               DEMO MODE ACTIVE
             </strong>
             Serving verified recorded fixtures for all connectors and deterministic LLM narrative.
-            No live API keys or external charges required.
           </span>
         </div>
       </div>
@@ -27,15 +26,15 @@ export default function DemoBanner({ show }: { show: boolean }) {
   return (
     <div
       role="status"
-      className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-emerald-200 px-4 py-2 shadow-sm flex items-center justify-between text-xs font-medium border-b border-emerald-800/40"
+      className="bg-emerald-950/20 backdrop-blur-xl text-emerald-200/90 px-4 py-1.5 flex items-center justify-between text-xs font-normal border-b border-emerald-500/15 shadow-sm"
     >
       <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
         <span className="relative flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
         </span>
-        <span>
-          <strong className="font-semibold uppercase tracking-wider bg-emerald-900/80 text-emerald-300 px-1.5 py-0.5 rounded mr-1.5 border border-emerald-700/60">
+        <span className="text-[11px] sm:text-xs text-emerald-200/80">
+          <strong className="font-semibold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-full mr-2 border border-emerald-500/25 text-[10px]">
             LIVE DATA ACTIVE
           </strong>
           Aggregating real-time feeds: GDACS, USGS, Open-Meteo, Bhuvan/ISRO, GDELT & OSM Overpass.

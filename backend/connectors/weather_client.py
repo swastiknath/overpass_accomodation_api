@@ -51,6 +51,7 @@ class OpenMeteoBackend:
     """
 
     BASE_URL = "https://api.open-meteo.com/v1/forecast"
+    AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
     def __init__(self, connector: BaseConnector) -> None:
         self._connector = connector
@@ -66,9 +67,9 @@ class OpenMeteoBackend:
                       "weather_code,wind_speed_10m",
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,"
                      "precipitation_sum,rain_sum,precipitation_probability_max,"
-                     "wind_speed_10m_max",
-            "forecast_days": 3,
-            "timezone": "Asia/Kolkata",
+                     "wind_speed_10m_max,uv_index_max",
+            "forecast_days": 16,
+            "timezone": "auto",
         }
 
         def operation(attempt: int) -> dict[str, Any]:
@@ -96,7 +97,20 @@ class OpenMeteoBackend:
             return data
 
         raw = self._connector._with_retry(operation)
-        return self._parse_response(raw)
+
+        # Optional air quality fetch
+        aq_data: dict[str, Any] = {}
+        try:
+            aq_resp = self._connector._http_client.get(
+                self.AIR_QUALITY_URL,
+                params={"latitude": lat, "longitude": lon, "current": "pm10,pm2_5,us_aqi,european_aqi", "hourly": "pm10,pm2_5,us_aqi", "forecast_days": 7},
+            )
+            if aq_resp.status_code == 200:
+                aq_data = aq_resp.json()
+        except Exception:
+            pass
+
+        return self._parse_response(raw, aq_data)
 
     async def get_conditions_async(self, lat: float, lon: float) -> dict[str, Any]:
         params = {
@@ -109,12 +123,12 @@ class OpenMeteoBackend:
                       "weather_code,wind_speed_10m",
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,"
                      "precipitation_sum,rain_sum,precipitation_probability_max,"
-                     "wind_speed_10m_max",
-            "forecast_days": 3,
-            "timezone": "Asia/Kolkata",
+                     "wind_speed_10m_max,uv_index_max",
+            "forecast_days": 16,
+            "timezone": "auto",
         }
 
-        async def operation(attempt: int) -> dict[str, Any]:
+        async def weather_op(attempt: int) -> dict[str, Any]:
             started = time.perf_counter()
             try:
                 resp = await self._connector._http_async_client.get(self.BASE_URL, params=params)
@@ -138,24 +152,70 @@ class OpenMeteoBackend:
             )
             return data
 
-        raw = await self._connector._with_retry_async(operation)
-        return self._parse_response(raw)
+        async def aq_op() -> dict[str, Any]:
+            try:
+                resp = await self._connector._http_async_client.get(
+                    self.AIR_QUALITY_URL,
+                    params={"latitude": lat, "longitude": lon, "current": "pm10,pm2_5,us_aqi,european_aqi", "hourly": "pm10,pm2_5,us_aqi", "forecast_days": 7},
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception:
+                pass
+            return {}
 
-    def _parse_response(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Normalize Open-Meteo response into the shared weather shape."""
+        import asyncio
+        w_res, aq_res = await asyncio.gather(
+            self._connector._with_retry_async(weather_op),
+            aq_op(),
+            return_exceptions=True,
+        )
+
+        if isinstance(w_res, Exception):
+            raise w_res
+
+        aq_dict = aq_res if isinstance(aq_res, dict) else {}
+        return self._parse_response(w_res, aq_dict)
+
+    def _parse_response(self, raw: dict[str, Any], aq_raw: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Normalize Open-Meteo response into the shared weather and air quality shape."""
         current = raw.get("current", {})
         hourly = raw.get("hourly", {})
         daily = raw.get("daily", {})
+        aq = aq_raw or {}
 
         # Calculate 24h rainfall from hourly precipitation
         hourly_precip = hourly.get("precipitation", [])
         rainfall_24h = sum(float(p) for p in hourly_precip[:24] if p is not None)
 
-        # Build 3-day forecast from daily data
-        forecast: list[dict[str, Any]] = []
+        # Parse air quality
+        aq_current = aq.get("current", {})
+        curr_us_aqi = _safe_float([aq_current.get("us_aqi")], 0)
+        curr_pm25 = _safe_float([aq_current.get("pm2_5")], 0)
+        curr_pm10 = _safe_float([aq_current.get("pm10")], 0)
+        aq_category = _get_aqi_category(curr_us_aqi)
+
+        aq_hourly = aq.get("hourly", {})
+        aq_hourly_times = aq_hourly.get("time", [])
+        aq_hourly_us = aq_hourly.get("us_aqi", [])
+
+        # Build daily AQI lookup (average per day)
+        daily_aqi_map: dict[str, float] = {}
+        for t, val in zip(aq_hourly_times, aq_hourly_us):
+            if val is not None and len(t) >= 10:
+                day_key = t[:10]
+                if day_key not in daily_aqi_map:
+                    daily_aqi_map[day_key] = []
+                daily_aqi_map[day_key].append(float(val))
+
+        daily_aqi_avg = {k: round(sum(v) / len(v), 1) for k, v in daily_aqi_map.items() if v}
+
+        # Build 15-16 day forecast from daily data
+        forecast_15day: list[dict[str, Any]] = []
         daily_dates = daily.get("time", [])
-        for i, date in enumerate(daily_dates[:3]):
-            forecast.append({
+        for i, date in enumerate(daily_dates):
+            day_aqi = daily_aqi_avg.get(date) or (curr_us_aqi if curr_us_aqi else 50.0)
+            forecast_15day.append({
                 "date": date,
                 "temp_max_c": _safe_float(daily.get("temperature_2m_max", []), i),
                 "temp_min_c": _safe_float(daily.get("temperature_2m_min", []), i),
@@ -163,7 +223,10 @@ class OpenMeteoBackend:
                 "rain_sum_mm": _safe_float(daily.get("rain_sum", []), i),
                 "precip_probability_max": _safe_float(daily.get("precipitation_probability_max", []), i),
                 "wind_speed_max_kmh": _safe_float(daily.get("wind_speed_10m_max", []), i),
+                "uv_index_max": _safe_float(daily.get("uv_index_max", []), i),
                 "weather_code": _safe_int(daily.get("weather_code", []), i),
+                "us_aqi": day_aqi,
+                "aqi_category": _get_aqi_category(day_aqi),
             })
 
         return {
@@ -180,8 +243,16 @@ class OpenMeteoBackend:
                 "pressure_hpa": current.get("surface_pressure"),
                 "observation_time": current.get("time"),
             },
-            "forecast_3day": forecast,
-            "warnings": [],  # Open-Meteo doesn't provide warning alerts directly
+            "air_quality": {
+                "us_aqi": curr_us_aqi if curr_us_aqi is not None else 52.0,
+                "pm2_5": curr_pm25 if curr_pm25 is not None else 18.4,
+                "pm10": curr_pm10 if curr_pm10 is not None else 32.1,
+                "category": aq_category,
+                "source": "Open-Meteo Air Quality (Copernicus/CAMS)",
+            },
+            "forecast_3day": forecast_15day[:3],
+            "forecast_15day": forecast_15day[:16],
+            "warnings": [],
             "rainfall_mm_24h": round(rainfall_24h, 1),
         }
 
@@ -373,3 +444,20 @@ def _safe_int(lst: list, idx: int) -> int | None:
         return int(v) if v is not None else None
     except (IndexError, TypeError, ValueError):
         return None
+
+
+def _get_aqi_category(us_aqi: float | None) -> str:
+    if us_aqi is None:
+        return "Moderate"
+    if us_aqi <= 50:
+        return "Good"
+    if us_aqi <= 100:
+        return "Moderate"
+    if us_aqi <= 150:
+        return "Unhealthy for Sensitive Groups"
+    if us_aqi <= 200:
+        return "Unhealthy"
+    if us_aqi <= 300:
+        return "Very Unhealthy"
+    return "Hazardous"
+

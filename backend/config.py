@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     )
 
     # ── Geocoding & Maps ──────────────────────────────────────────────────
+    restrict_to_india: bool = Field(
+        default=False,
+        description="When True, rejects coordinates outside India territorial boundaries with HTTP 400",
+    )
+    nominatim_country_codes: str | None = Field(
+        default=None,
+        description="Optional country codes filter for Nominatim (e.g. 'in' to restrict to India, None for worldwide)",
+    )
     geocode_provider: Literal["nominatim", "photon", "mapbox"] = Field(default="nominatim")
     nominatim_user_agent: str = Field(
         default="IndiaTravelSafety/1.0 (safety-research@example.com)",
@@ -48,7 +56,7 @@ class Settings(BaseSettings):
     )
     nominatim_base_url: str = Field(default="https://nominatim.openstreetmap.org")
     mapbox_access_token: str | None = Field(default=None)
-    map_style_url: str = Field(default="https://demotiles.maplibre.org/style.json")
+    map_style_url: str = Field(default="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json")
 
     # ── Hotel Providers ───────────────────────────────────────────────────
     overpass_url: str = Field(default="https://overpass-api.de/api/interpreter")
@@ -61,14 +69,15 @@ class Settings(BaseSettings):
     # ── OpenRouter LLM ────────────────────────────────────────────────────
     openrouter_api_key: str | None = Field(default=None)
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
-    openrouter_model_narrator: str = Field(default="anthropic/claude-3.5-sonnet")
-    openrouter_model_verifier: str = Field(default="openai/gpt-4o-mini")
+    openrouter_model_narrator: str = Field(default="google/gemma-4-31b-it:free")
+    openrouter_model_verifier: str = Field(default="google/gemma-4-26b-a4b-it:free")
+    openrouter_model_decider: str = Field(default="inception/mercury-decide:free")
     openrouter_fallback_models: list[str] = Field(
-        default_factory=lambda: ["google/gemini-2.0-flash-001", "meta-llama/llama-3.3-70b-instruct"]
+        default_factory=lambda: ["google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free"]
     )
     openrouter_referer: str = Field(default="https://indiatravelsafety.org")
     openrouter_app_title: str = Field(default="India Travel Safety Intelligence")
-    openrouter_timeout_seconds: float = Field(default=25.0, gt=0)
+    openrouter_timeout_seconds: float = Field(default=10.0, gt=0)
     openrouter_max_retries: int = Field(default=2, ge=0)
     llm_daily_budget_usd: float = Field(default=10.0, gt=0)
     llm_daily_token_limit: int = Field(default=500000, gt=0)

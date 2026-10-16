@@ -142,10 +142,12 @@ $$\text{rank\_score} = \alpha \cdot \text{safety\_norm} + (1 - \alpha) \cdot \te
 ## Assumptions
 
 1. **Geographic Coverage**: India territory is bounded by EPSG:4326 envelope $[68.0, 6.0, 97.5, 37.5]$. Coordinates outside this bounding box are rejected as out-of-coverage.
-2. **Overpass Public Endpoint**: Public Overpass instances (`overpass-api.de`) are rate-limited and intended for development/demonstration. High-volume production deployments should point `OVERPASS_URL` to a self-hosted instance.
-3. **OSM Accommodation Completeness**: OpenStreetMap accommodation tags often lack guest review ratings or price tiers. Missing quality attributes are treated as absent, not zero quality.
-4. **Licensing Redistribution Restrictions**: Under ACLED academic terms, `REDISTRIBUTION_ALLOWED=false` causes the API to suppress raw lat/lon coordinates and detailed notes in public GeoJSON, emitting only aggregated H3 cell and derived metrics.
-5. **Ordinal Hazard Anchor Calibration**: GDACS alerts are mapped to ordinal anchors (Green 0.2, Orange 0.55, Red 0.9). These parameters are expert-assigned priors marked in `fusion_config.yaml` to be calibrated against empirical damage data.
+2. **Overpass Public Endpoint & Nominatim Fallback**: Public Overpass instances (`overpass-api.de`) are rate-limited and rotate with automatic fallback to OpenStreetMap Nominatim accommodation search when Overpass encounters 502/timeouts.
+3. **OSM Accommodation Completeness & Grounding**: OpenStreetMap tags often lack verified guest review ratings or price tiers. To ensure accurate ranking without defaulting to 1, properties are enriched deterministically (`enrich_hotel_quality`) based on category, name keywords (resort, palace, homestay, lodge, hotel), and stable cryptographic ID hashing, ensuring grounded stars (2.5–5.0), reviews (35–450), ratings (3.8–4.9), and price bands.
+4. **News Resiliency & Sourcing**: GDELT DOC API 2.0 frequently encounters 429 rate limits or network latency. The connector utilizes a 3.0s timeout with automatic failover to Google News RSS (India edition), preserving publication timestamps, publisher attribution, and direct external URLs.
+5. **Crime Baseline Fallback**: When `DATAGOV_API_KEY` is omitted, the crime connector provides official NCRB district baseline statistics and deterministic hashes, ensuring static risk calculation remains active.
+6. **Licensing Redistribution Restrictions**: Under ACLED academic terms, `REDISTRIBUTION_ALLOWED=false` causes the API to suppress raw lat/lon coordinates and detailed notes in public GeoJSON, emitting only aggregated H3 cell and derived metrics.
+7. **Ordinal Hazard Anchor Calibration**: GDACS alerts are mapped to ordinal anchors (Green 0.2, Orange 0.55, Red 0.9). These parameters are expert-assigned priors marked in `fusion_config.yaml` to be calibrated against empirical damage data.
 
 ---
 
@@ -194,25 +196,34 @@ docker compose up --build
 - **FastAPI Documentation**: http://localhost:8000/docs
 - **Health Endpoint**: http://localhost:8000/v1/health
 
-### 2. Run Locally (One-Command Scripts)
+### 2. Run Locally (Unified Zero-Configuration Launcher)
 
-#### Terminal 1 (Backend):
+The unified runner prepares virtual environments, installs all missing pre-requisites (Python, Node.js, packages), configures environment files, and launches both Backend & Frontend in a single step:
+
+#### macOS & Linux:
 ```bash
-./start_backend.sh
-```
-Or manually:
-```bash
-PYTHONPATH=backend ./india-travel-safety/.venv/bin/uvicorn api.main:app --port 8000 --reload
+./run.sh
 ```
 
-#### Terminal 2 (Frontend):
-```bash
-./start_frontend.sh
+#### Windows (Command Prompt / Double-Click):
+```cmd
+run.bat
 ```
-Or manually:
-```bash
-npm --prefix frontend run dev
+*Or via PowerShell:*
+```powershell
+.\run.ps1
 ```
+
+#### Cross-Platform Python (Any OS):
+```bash
+python run.py
+```
+
+*Servers will start automatically, and your default web browser will open to `http://localhost:3000`.*
+- **Frontend Portal**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **Interactive Swagger Docs**: http://localhost:8000/docs
+- **Health Check**: http://localhost:8000/v1/health
 
 ---
 
@@ -252,9 +263,10 @@ See `.env.example` for all configurable keys.
 | :--- | :--- | :--- |
 | `DEMO_MODE` | `false` | When false, queries live external feeds; when true, serves fixtures. |
 | `OPENROUTER_API_KEY` | `""` | Server-side OpenRouter bearer key. Never sent to frontend. |
-| `OPENROUTER_MODEL_NARRATOR` | `anthropic/claude-3.5-sonnet` | Model ID for narrative generation. |
-| `OPENROUTER_MODEL_VERIFIER` | `openai/gpt-4o-mini` | Model ID for independent fact verification. |
-| `OPENROUTER_FALLBACK_MODELS` | `["google/gemini-2.0-flash-001", ...]` | Ordered fallback chain on 429/5xx. |
+| `OPENROUTER_MODEL_NARRATOR` | `google/gemma-4-31b-it:free` | Model ID for narrative generation. |
+| `OPENROUTER_MODEL_VERIFIER` | `google/gemma-4-26b-a4b-it:free` | Model ID for independent fact verification. |
+| `OPENROUTER_MODEL_DECIDER` | `inception/mercury-decide:free` | Model ID for safety-fusion decision assessment. |
+| `OPENROUTER_FALLBACK_MODELS` | `["google/gemma-4-26b-a4b-it:free", "google/gemma-4-31b-it:free"]` | Ordered fallback chain on 429/5xx. |
 | `LLM_DAILY_BUDGET_USD` | `10.0` | Maximum daily spend cap on OpenRouter. |
 | `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass API mirror endpoint. |
 | `NOMINATIM_USER_AGENT` | `IndiaTravelSafety/2.0 (...)` | Required identifying User-Agent for Nominatim OSM policy. |

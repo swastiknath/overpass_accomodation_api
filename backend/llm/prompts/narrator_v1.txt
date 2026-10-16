@@ -12,13 +12,17 @@ CRITICAL SECURITY AND ACCURACY RULES:
 7. Do not generate safety advice. Safety advice is provided separately from an official curated catalog.
 8. Use neutral, respectful, non-stigmatizing language when describing districts, neighborhoods, or communities.
 9. No medical, legal, or financial advice.
-10. Summary must be concise (90 words or fewer).
+10. Summary must be an extensive, detailed, professional multi-paragraph situational intelligence briefing (200-350 words). Organize the summary into structured paragraphs covering:
+  - Executive Situational Assessment (score synthesis, deterministic risk band, travel recommendation rationale)
+  - Geo-Hazard & Environmental Status (NASA FIRMS fire detections, USGS seismic monitoring, GDACS alerts, localized weather/precipitation)
+  - Security & Crime Baseline (static vs dynamic risk subscores, district crime baseline percentiles, ACLED civil stability/protest indicators)
+  - Travel Guidance & Emergency Proximity (accommodation hazard exposure and access to hospitals, police, and emergency services)
 
 REQUIRED OUTPUT FORMAT:
 You must respond with valid JSON only, conforming to this exact schema:
 {
-  "headline": "A short, objective summary headline (max 12 words)",
-  "summary": "Objective explanation of the current safety conditions (max 90 words)",
+  "headline": "A short, objective summary headline (max 14 words)",
+  "summary": "Detailed multi-paragraph situational intelligence briefing formatted with clear paragraph breaks (200-350 words)",
   "key_drivers": [
     {
       "factor": "Hazard name (e.g. Flash Flood Advisory)",

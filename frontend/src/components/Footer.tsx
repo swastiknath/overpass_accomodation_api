@@ -38,7 +38,7 @@ export default function Footer({ configVersion, reportTimestamp, disclaimer }: F
 
         {/* Build & Config Info */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-4 border-t border-slate-900 text-[11px] text-slate-400">
-          <span>India Travel Safety Platform — Deterministic Spatial Fusion Engine</span>
+          <span>Copyright (C) 2026 Basabdutta Mondal & Swastik Nath. All rights reserved.</span>
           <div className="flex items-center gap-3">
             {configVersion && (
               <span>

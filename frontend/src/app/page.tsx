@@ -12,8 +12,13 @@ import ExplanationPanel from "@/components/ExplanationPanel";
 import NarrativeCard from "@/components/NarrativeCard";
 import CuratedAdvicePanel from "@/components/CuratedAdvicePanel";
 import HotelsList from "@/components/HotelsList";
+import NewsSection from "@/components/NewsSection";
 import DisambiguationModal from "@/components/DisambiguationModal";
 import ExportButtons from "@/components/ExportButtons";
+import WeatherAirQualityPanel from "@/components/WeatherAirQualityPanel";
+import TravelAdvisoriesBanner from "@/components/TravelAdvisoriesBanner";
+import HistoricalDataViewer from "@/components/HistoricalDataViewer";
+import RiskTelemetryVisualizer from "@/components/RiskTelemetryVisualizer";
 import Footer from "@/components/Footer";
 import dynamic from "next/dynamic";
 
@@ -95,7 +100,7 @@ function DashboardContent() {
   const isDemo = report?.demo ?? true;
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans">
+    <div className="flex flex-col min-h-screen bg-black text-zinc-100 font-sans">
       <DemoBanner show={isDemo} />
       <Navbar
         onSearch={handleSearch}
@@ -129,8 +134,8 @@ function DashboardContent() {
         {/* Report Loading State */}
         {reportLoading && (
           <div className="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 className="h-10 w-10 text-indigo-500 animate-spin" />
-            <p className="text-sm font-medium text-slate-300">
+            <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
+            <p className="text-sm font-medium text-zinc-300">
               Evaluating live hazard feeds and calculating deterministic fusion score...
             </p>
           </div>
@@ -140,9 +145,9 @@ function DashboardContent() {
         {report && (
           <div className="space-y-6">
             {/* Top Toolbar: Destination Title & Export Buttons */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-950 p-4 rounded-2xl border border-zinc-800 shadow-xl">
               <div>
-                <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-widest block">
+                <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest block">
                   Ground Safety & Hotel Intelligence
                 </span>
                 <h2 className="text-xl font-extrabold text-white tracking-tight">
@@ -151,6 +156,14 @@ function DashboardContent() {
               </div>
               <ExportButtons report={report} />
             </div>
+
+            {/* Official International Travel Advisory Alert Banner */}
+            {report.travel_advisories && (
+              <TravelAdvisoriesBanner
+                advisory={report.travel_advisories}
+                locationName={report.location.display_name}
+              />
+            )}
 
             {/* Score Panel */}
             <ScorePanel report={report} />
@@ -165,20 +178,41 @@ function DashboardContent() {
                   onSelectHotel={setSelectedHotelId}
                 />
                 <ExplanationPanel report={report} />
+                <HistoricalDataViewer report={report} />
               </div>
 
-              {/* Sidebar Column: AI Narrative & Curated Advice (5 Cols) */}
+              {/* Sidebar Column: AI Narrative (5 Cols) */}
               <div className="lg:col-span-5 space-y-6">
                 <NarrativeCard
                   explanation={explanation}
                   isLoading={explanationLoading}
                   error={explanationError?.message}
                 />
-                <CuratedAdvicePanel
-                  adviceItems={explanation?.curated_advice || []}
-                />
+                <RiskTelemetryVisualizer report={report} />
               </div>
             </div>
+
+            {/* Official Safety Guidance & Local District Administration (Shifted Down Full Width) */}
+            <CuratedAdvicePanel
+              adviceItems={explanation?.curated_advice || []}
+              locationName={report.location.display_name}
+            />
+
+            {/* 15-Day Weather & Air Quality Forecaster */}
+            {report.weather_and_air_quality && (
+              <WeatherAirQualityPanel
+                weatherData={report.weather_and_air_quality}
+                locationName={report.location.display_name.split(",")[0]}
+              />
+            )}
+
+            {/* Relevant News Section */}
+            {report.news_articles && report.news_articles.length > 0 && (
+              <NewsSection
+                articles={report.news_articles}
+                locationName={report.location.display_name.split(",")[0]}
+              />
+            )}
 
             {/* Hotels Ranking Section */}
             <HotelsList

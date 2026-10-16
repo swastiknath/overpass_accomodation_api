@@ -21,10 +21,13 @@ Geolocation-bias correction:
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
 import time
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger("connectors.news")
 from pathlib import Path
 from typing import Any
 
@@ -209,6 +212,7 @@ class NewsClient(BaseConnector):
         lon: float,
         radius_km: float = 50.0,
         since: datetime | None = None,
+        location_name: str | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch safety-relevant news articles near a location."""
         if since is None:
@@ -231,30 +235,20 @@ class NewsClient(BaseConnector):
             "sort": "DateDesc",
         }
 
-        def operation(attempt: int) -> dict[str, Any]:
-            started = time.perf_counter()
-            try:
-                resp = self._http_client.get(gdelt_url, params=params)
-                resp.raise_for_status()
+        articles = []
+        try:
+            resp = self._http_client.get(gdelt_url, params=params, timeout=3.0)
+            if resp.status_code == 200:
                 data = resp.json()
-            except Exception as exc:
-                elapsed = (time.perf_counter() - started) * 1000
-                classified = self._classify_http_error(exc, url=gdelt_url)
-                self._log_fetch(
-                    url=gdelt_url, params=params,
-                    status=getattr(getattr(exc, "response", None), "status_code", None),
-                    attempt=attempt, elapsed_ms=elapsed,
-                    error_type=type(classified).__name__, message="raw_fetch_error",
-                )
-                raise classified from exc
+                articles = data.get("articles", [])
+                self._record_success()
+        except Exception as exc:
+            logger.warning(f"GDELT DOC API failed ({exc}); falling back to Google News RSS")
 
-            elapsed = (time.perf_counter() - started) * 1000
-            self._log_fetch(url=gdelt_url, params=params, status="ok", attempt=attempt, elapsed_ms=elapsed)
-            return data
+        if not articles:
+            search_term = location_name or f"India {round(lat, 2)} {round(lon, 2)}"
+            articles = self._fetch_google_news_rss_sync(search_term)
 
-        raw = self._with_retry(operation)
-        self._record_success()
-        articles = raw.get("articles", [])
         return self._enrich_articles(articles, lat, lon, radius_km)
 
     async def fetch_local_news_async(
@@ -263,6 +257,7 @@ class NewsClient(BaseConnector):
         lon: float,
         radius_km: float = 50.0,
         since: datetime | None = None,
+        location_name: str | None = None,
     ) -> list[dict[str, Any]]:
         """Async variant of fetch_local_news."""
         if since is None:
@@ -284,31 +279,163 @@ class NewsClient(BaseConnector):
             "sort": "DateDesc",
         }
 
-        async def operation(attempt: int) -> dict[str, Any]:
-            started = time.perf_counter()
-            try:
-                resp = await self._http_async_client.get(gdelt_url, params=params)
-                resp.raise_for_status()
+        articles = []
+        try:
+            resp = await self._http_async_client.get(gdelt_url, params=params, timeout=3.0)
+            if resp.status_code == 200:
                 data = resp.json()
-            except Exception as exc:
-                elapsed = (time.perf_counter() - started) * 1000
-                classified = self._classify_http_error(exc, url=gdelt_url)
-                self._log_fetch(
-                    url=gdelt_url, params=params,
-                    status=getattr(getattr(exc, "response", None), "status_code", None),
-                    attempt=attempt, elapsed_ms=elapsed,
-                    error_type=type(classified).__name__, message="raw_fetch_error",
-                )
-                raise classified from exc
+                articles = data.get("articles", [])
+                self._record_success()
+        except Exception as exc:
+            logger.warning(f"GDELT DOC API failed ({exc}); falling back to Google News RSS")
 
-            elapsed = (time.perf_counter() - started) * 1000
-            self._log_fetch(url=gdelt_url, params=params, status="ok", attempt=attempt, elapsed_ms=elapsed)
-            return data
+        if not articles:
+            search_term = location_name or f"India {round(lat, 2)} {round(lon, 2)}"
+            articles = await self._fetch_google_news_rss_async(search_term)
 
-        raw = await self._with_retry_async(operation)
-        self._record_success()
-        articles = raw.get("articles", [])
         return self._enrich_articles(articles, lat, lon, radius_km)
+
+    def _clean_and_filter_article(
+        self, title: str, snippet: str, url: str, source_name: str, pub_date: str
+    ) -> dict[str, Any] | None:
+        """Filter out non-news, weather forecasts, IQAir monitors, and academic papers."""
+        import html
+
+        if not title or not url:
+            return None
+
+        clean_title = html.unescape(title).strip()
+        clean_snippet = html.unescape(snippet).strip() if snippet else clean_title
+
+        # Strip redundant source suffix from title if present
+        if source_name and clean_title.endswith(f" - {source_name}"):
+            clean_title = clean_title[: -len(f" - {source_name}")].strip()
+
+        title_lower = clean_title.lower()
+        url_lower = url.lower()
+        source_lower = (source_name or "").lower()
+
+        # Exclude non-news / spam / weather / academic domains
+        excluded_domains = [
+            "weather.com", "accuweather.com", "iqair.com", "wunderground.com",
+            "timeanddate.com", "nature.com", "sciencedirect.com", "springer.com",
+            "researchgate.net", "tripadvisor.com", "booking.com", "airbnb.com",
+            "wikipedia.org", "yelp.com", "makemytrip.com", "expedia.com",
+            "hotels.com", "trivago.com", "agoda.com"
+        ]
+        if any(d in url_lower or d in source_lower for d in excluded_domains):
+            return None
+
+        # Exclude titles matching weather forecasts, pollution trackers, flight deals
+        excluded_patterns = [
+            r"weather\s+forecast",
+            r"forecast\s+and\s+conditions",
+            r"air\s+quality\s+index",
+            r"air\s+quality\s+in",
+            r"air\s+pollution",
+            r"\baqi\b",
+            r"hourly\s+weather",
+            r"10-day\s+forecast",
+            r"deep\s+learning-based",
+            r"susceptibility\s+mapping",
+            r"cheap\s+flights",
+            r"best\s+hotels\s+in",
+            r"flight\s+deals",
+        ]
+        if any(re.search(pat, title_lower) for pat in excluded_patterns):
+            return None
+
+        cat, conf = _classify_event(clean_title, clean_snippet)
+
+        return {
+            "title": clean_title,
+            "url": url,
+            "source": source_name,
+            "seendate": pub_date,
+            "tone": -1.5 if cat in ("natural_disaster", "crime", "accident", "civil_unrest") else -0.2,
+            "category": cat,
+            "snippet": clean_snippet[:280] if clean_snippet else clean_title,
+            "geo_source": "google_news_rss",
+        }
+
+    def _fetch_google_news_rss_sync(self, query_text: str) -> list[dict[str, Any]]:
+        """Fetch safety, socio-political, and travel news from Google News RSS synchronously."""
+        import xml.etree.ElementTree as ET
+        import urllib.parse
+
+        clean_q = query_text.split(",")[0] if "," in query_text else query_text
+        encoded_q = urllib.parse.quote(
+            f'"{clean_q}" (politics OR government OR security OR diplomatic OR "civil unrest" OR administration OR protest OR economy OR news)'
+        )
+        rss_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en-US&gl=US&ceid=US:en"
+        articles: list[dict[str, Any]] = []
+        seen_titles = set()
+
+        try:
+            resp = self._http_client.get(rss_url)
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.text)
+                for item in root.findall(".//item")[:30]:
+                    title_elem = item.find("title")
+                    link_elem = item.find("link")
+                    pub_elem = item.find("pubDate")
+                    source_elem = item.find("source")
+                    desc_elem = item.find("description")
+                    title = title_elem.text if title_elem is not None and title_elem.text else ""
+                    url = link_elem.text if link_elem is not None and link_elem.text else ""
+                    source_name = source_elem.text if source_elem is not None and source_elem.text else "News"
+                    pub_date = pub_elem.text if pub_elem is not None and pub_elem.text else ""
+                    raw_desc = desc_elem.text if desc_elem is not None and desc_elem.text else ""
+                    snippet = re.sub(r"<[^>]+>", "", raw_desc).strip()
+
+                    art = self._clean_and_filter_article(title, snippet, url, source_name, pub_date)
+                    if art and art["title"] not in seen_titles:
+                        seen_titles.add(art["title"])
+                        articles.append(art)
+        except Exception as e:
+            logger.warning(f"Google News RSS sync failed: {e}")
+        return articles
+
+    async def _fetch_google_news_rss_async(self, query_text: str) -> list[dict[str, Any]]:
+        """Fetch safety, socio-political, and regional news from Google News RSS asynchronously."""
+        import xml.etree.ElementTree as ET
+        import urllib.parse
+
+        clean_q = query_text.split(",")[0] if "," in query_text else query_text
+        encoded_q = urllib.parse.quote(
+            f'"{clean_q}" (politics OR government OR security OR diplomatic OR "civil unrest" OR administration OR protest OR economy OR news)'
+        )
+        rss_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=en-US&gl=US&ceid=US:en"
+        articles: list[dict[str, Any]] = []
+        seen_titles = set()
+
+        try:
+            resp = await self._http_async_client.get(
+                rss_url,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
+            )
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.text)
+                for item in root.findall(".//item")[:30]:
+                    title_elem = item.find("title")
+                    link_elem = item.find("link")
+                    pub_elem = item.find("pubDate")
+                    source_elem = item.find("source")
+                    desc_elem = item.find("description")
+                    title = title_elem.text if title_elem is not None and title_elem.text else ""
+                    url = link_elem.text if link_elem is not None and link_elem.text else ""
+                    source_name = source_elem.text if source_elem is not None and source_elem.text else "News"
+                    pub_date = pub_elem.text if pub_elem is not None and pub_elem.text else ""
+                    raw_desc = desc_elem.text if desc_elem is not None and desc_elem.text else ""
+                    snippet = re.sub(r"<[^>]+>", "", raw_desc).strip()
+
+                    art = self._clean_and_filter_article(title, snippet, url, source_name, pub_date)
+                    if art and art["title"] not in seen_titles:
+                        seen_titles.add(art["title"])
+                        articles.append(art)
+        except Exception as e:
+            logger.warning(f"Google News RSS async failed: {e}")
+        return articles
 
     def _enrich_articles(
         self,
@@ -363,13 +490,16 @@ class NewsClient(BaseConnector):
                 enriched_article = {
                     "title": title,
                     "url": url,
+                    "source": article.get("source") or article.get("domain") or "News Source",
                     "domain": article.get("domain", ""),
                     "language": article.get("language", ""),
                     "article_time": article_time.isoformat(),
+                    "seendate": article.get("seendate") or article_time.strftime("%b %d, %Y"),
                     "gdelt_location": gdelt_location,
                     "ner_location": ner_location,
                     "tone": tone_val,
                     "category": category,
+                    "snippet": article.get("snippet") or title,
                     "classification_confidence": class_confidence,
                     "recency_weight": _recency_weight(article_time, category),
                     "source_image": article.get("socialimage", ""),
@@ -382,7 +512,12 @@ class NewsClient(BaseConnector):
 
     # ── Layer 2: Analytics ────────────────────────────────────────────────
 
-    def analyze_articles(self, articles: list[dict[str, Any]]) -> list[IngestedRecord]:
+    def analyze_articles(
+        self,
+        articles: list[dict[str, Any]],
+        target_lat: float | None = None,
+        target_lon: float | None = None,
+    ) -> list[IngestedRecord]:
         """Analyze enriched articles into IngestedRecord instances."""
         from shapely.geometry import Point
 
@@ -401,7 +536,8 @@ class NewsClient(BaseConnector):
             signal = 0.0
             avg_tone = 0.0
             avg_confidence = 0.0
-            representative_lat, representative_lon = None, None
+            representative_lat = target_lat
+            representative_lon = target_lon
 
             for art in cat_articles:
                 weight = art.get("recency_weight", 0.5)
@@ -420,18 +556,9 @@ class NewsClient(BaseConnector):
             avg_tone /= n
             avg_confidence /= n
 
-            severity_raw = min(signal / 10.0, 1.0)
-
-            hazard_map = {
-                "protest": "civil_unrest",
-                "civil_unrest": "civil_unrest",
-                "accident": "accident",
-                "natural_disaster": "natural_disaster",
-                "fire": "fire",
-                "crime": "crime",
-                "general": "general_safety",
-            }
-            hazard_type = hazard_map.get(category, "general_safety")
+            # Normalize signal into a severity payload
+            severity_raw = min(signal / 5.0, 1.0)
+            hazard_type = "news"
 
             if representative_lat is None:
                 representative_lat = 20.5937
@@ -441,17 +568,21 @@ class NewsClient(BaseConnector):
 
             record = IngestedRecord(
                 event_id=eid,
-                source="gdelt_news",
+                source="gdelt",
                 hazard_type=hazard_type,
                 geometry=Point(representative_lon, representative_lat),
                 event_time=ingest_time,
                 ingest_time=ingest_time,
-                severity_raw=severity_raw,
+                severity_raw=None,
                 confidence=round(avg_confidence, 2),
                 resolution_tier=ResolutionTier.DISTRICT,
                 raw_payload={
+                    "title": f"Local News: {category.replace('_', ' ').title()} ({n} reports)",
                     "category": category,
+                    "classifier_confidence": round(avg_confidence, 2),
+                    "tone_severity": round(severity_raw, 2),
                     "article_count": n,
+                    "recency_decay": 1.0,
                     "local_news_signal": round(signal, 3),
                     "avg_tone": round(avg_tone, 2),
                     "avg_classification_confidence": round(avg_confidence, 2),
@@ -459,6 +590,8 @@ class NewsClient(BaseConnector):
                         {
                             "title": a.get("title", ""),
                             "url": a.get("url", ""),
+                            "source": a.get("source", "News"),
+                            "snippet": a.get("snippet", ""),
                             "article_time": a.get("article_time", ""),
                             "tone": a.get("tone", 0),
                             "category": a.get("category", ""),

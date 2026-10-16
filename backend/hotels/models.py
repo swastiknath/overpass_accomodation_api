@@ -30,6 +30,7 @@ class Hotel(BaseModel):
     website: str | None = None
     phone: str | None = None
     distance_to_query_km: float = 0.0
+    review_snippet: str | None = None
 
 
 class AccessToHelp(BaseModel):

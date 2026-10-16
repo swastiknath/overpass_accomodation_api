@@ -63,7 +63,7 @@ describe("Coverage & Explanation Panel Component", () => {
   it("renders top driver with contribution percentage and human label", () => {
     render(<ExplanationPanel report={mockReport} />);
     expect(screen.getByText("Flood Alert")).toBeInTheDocument();
-    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getAllByText("100%").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders each coverage status explicitly so gaps are visible", () => {

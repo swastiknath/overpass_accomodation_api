@@ -205,10 +205,10 @@ async def get_sources_directory():
 
 @app.get("/v1/geocode", tags=["Location"], response_model=list[GeocodeCandidate])
 async def search_places(
-    q: str = Query(..., min_length=2, description="Place search query (e.g. Manali, Shimla, Paharganj)"),
+    q: str = Query(..., min_length=2, description="Place search query (e.g. Manali, Paris, Tokyo, Kathmandu)"),
     limit: int = Query(5, ge=1, le=10, description="Maximum number of candidates"),
 ):
-    """Geocode an Indian location query using Nominatim with countrycodes=in policy.
+    """Geocode a location query using Nominatim.
 
     NO per-keystroke querying; call on Enter or search button click.
     """
@@ -252,7 +252,7 @@ async def get_search_report(
         if not candidates:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Could not locate any place in India matching query '{q}'. Please check spelling.",
+                detail=f"Could not locate any place matching query '{q}'. Please check spelling.",
             )
         best = candidates[0]
         target_lat = best.lat
@@ -260,6 +260,7 @@ async def get_search_report(
         location_name = best.display_name
         district_id = best.district
         state_name = best.state
+        in_india = best.is_in_india
         if len(candidates) > 1:
             disambiguation = candidates[1:]
     else:
@@ -268,21 +269,23 @@ async def get_search_report(
             detail="Either 'q' or both 'lat' and 'lon' parameters must be provided.",
         )
 
-    # 2. Scope Check: India territory only
-    if not is_coordinate_in_india(target_lat, target_lon):
+    # 2. Scope Check: Optional territorial restriction (configurable via RESTRICT_TO_INDIA)
+    if 'in_india' not in locals():
+        in_india = is_coordinate_in_india(target_lat, target_lon)
+    if settings.restrict_to_india and not in_india:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
                 "error": "out_of_coverage",
                 "message": (
-                    f"Coordinates ({target_lat}, {target_lon}) fall outside India territorial coverage. "
-                    "This system operates exclusively for India travel safety."
+                    f"Coordinates ({target_lat}, {target_lon}) fall outside configured coverage area."
                 ),
                 "is_in_india": False,
             },
         )
 
     # 3. Gather signals and execute fusion orchestration
+    best_country = getattr(best, "country", None) if "best" in locals() else None
     orchestrator = get_orchestrator()
     report = await orchestrator.gather_signals_and_score(
         lat=target_lat,
@@ -294,7 +297,11 @@ async def get_search_report(
         alpha=alpha,
         max_hotels=max_hotels,
         price_preference=price_preference,
+        is_in_india=in_india,
+        country=best_country,
     )
+
+    report["is_in_india"] = in_india
 
     if disambiguation:
         report["disambiguation_candidates"] = [c.model_dump() for c in disambiguation]

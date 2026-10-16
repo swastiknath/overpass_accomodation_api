@@ -19,9 +19,12 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import feedparser
 
@@ -205,6 +208,36 @@ class DisasterAlertsClient(BaseConnector):
 
     # ── NASA FIRMS ────────────────────────────────────────────────────────
 
+    FIRMS_CSV_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
+    FIRMS_AREA_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
+
+    def _build_firms_url(
+        self,
+        map_key: str,
+        bbox: tuple[float, float, float, float] | None = None,
+        country: str = "IND",
+        days: int = 1,
+    ) -> str:
+        if bbox is not None:
+            lon_min, lat_min, lon_max, lat_max = bbox
+            lon_min, lon_max = min(lon_min, lon_max), max(lon_min, lon_max)
+            lat_min, lat_max = min(lat_min, lat_max), max(lat_min, lat_max)
+            if (lon_max - lon_min) < 0.2:
+                lon_min -= 0.15
+                lon_max += 0.15
+            if (lat_max - lat_min) < 0.2:
+                lat_min -= 0.15
+                lat_max += 0.15
+            lon_min = max(-180.0, min(180.0, lon_min))
+            lon_max = max(-180.0, min(180.0, lon_max))
+            lat_min = max(-90.0, min(90.0, lat_min))
+            lat_max = max(-90.0, min(90.0, lat_max))
+            return (
+                f"{self.FIRMS_AREA_URL}/{map_key}/VIIRS_SNPP_NRT/"
+                f"{round(lon_min, 3)},{round(lat_min, 3)},{round(lon_max, 3)},{round(lat_max, 3)}/{days}"
+            )
+        return f"{self.FIRMS_AREA_URL}/{map_key}/VIIRS_SNPP_NRT/68.0,6.0,98.0,38.0/{days}"
+
     def get_firms_fires(
         self,
         bbox: tuple[float, float, float, float] | None = None,
@@ -212,7 +245,7 @@ class DisasterAlertsClient(BaseConnector):
         country: str = "IND",
         days: int = 1,
     ) -> list[IngestedRecord]:
-        """Fetch active fire detections from NASA FIRMS.
+        """Fetch active fire detections from NASA FIRMS via area CSV API.
 
         Requires FIRMS_MAP_KEY in config (free from
         https://firms.modaps.eosdis.nasa.gov/api/area/).
@@ -224,7 +257,7 @@ class DisasterAlertsClient(BaseConnector):
                 "https://firms.modaps.eosdis.nasa.gov/api/area/"
             )
 
-        url = f"{self.FIRMS_CSV_URL}/{map_key}/VIIRS_SNPP_NRT/{country}/{days}"
+        url = self._build_firms_url(map_key, bbox=bbox, country=country, days=days)
 
         def operation(attempt: int) -> str:
             started = time.perf_counter()
@@ -265,7 +298,7 @@ class DisasterAlertsClient(BaseConnector):
                 "https://firms.modaps.eosdis.nasa.gov/api/area/"
             )
 
-        url = f"{self.FIRMS_CSV_URL}/{map_key}/VIIRS_SNPP_NRT/{country}/{days}"
+        url = self._build_firms_url(map_key, bbox=bbox, country=country, days=days)
 
         async def operation(attempt: int) -> str:
             started = time.perf_counter()
@@ -525,9 +558,9 @@ class DisasterAlertsClient(BaseConnector):
         import asyncio
 
         results = await asyncio.gather(
-            self.get_gdacs_alerts_async(bbox),
-            self._firms_or_empty_async(bbox),
-            self.get_usgs_earthquakes_async(bbox),
+            asyncio.wait_for(self.get_gdacs_alerts_async(bbox), timeout=5.0),
+            asyncio.wait_for(self._firms_or_empty_async(bbox), timeout=8.0),
+            asyncio.wait_for(self.get_usgs_earthquakes_async(bbox), timeout=5.0),
             return_exceptions=True,
         )
 
@@ -535,7 +568,8 @@ class DisasterAlertsClient(BaseConnector):
         for result in results:
             if isinstance(result, list):
                 all_records.extend(result)
-            # Exceptions are logged but don't block other sources
+            elif isinstance(result, Exception):
+                logger.warning(f"Disaster sub-source failed or timed out: {result}")
 
         return all_records
 

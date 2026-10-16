@@ -77,10 +77,11 @@ def evaluate_signal_at_location(
     age_hours = age_seconds / 3600.0
 
     # Normalization -> sigma in [0, 1]
-    raw_val = record.severity_raw if record.severity_raw is not None else record.severity_normalized
-    if raw_val is None:
-        raw_val = record.raw_payload
-    sigma = normalize_signal(record.hazard_type, raw_val, config)
+    if record.severity_normalized is not None:
+        sigma = float(record.severity_normalized)
+    else:
+        raw_val = record.severity_raw if record.severity_raw is not None else record.raw_payload
+        sigma = normalize_signal(record.hazard_type, raw_val, config)
 
     # Event type for conflict
     event_type = None

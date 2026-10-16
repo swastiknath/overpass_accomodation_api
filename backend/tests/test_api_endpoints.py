@@ -56,14 +56,26 @@ def test_geocode_no_results(client):
     assert resp.json() == []
 
 
-def test_search_report_out_of_india(client):
-    """GET /v1/search-report with coordinates outside India returns HTTP 400 out_of_coverage."""
-    # Paris, France coordinates (48.8566, 2.3522)
+def test_search_report_out_of_india_when_restricted(client, monkeypatch):
+    """GET /v1/search-report with coordinates outside India returns HTTP 400 when restrict_to_india=True."""
+    from api import main
+    monkeypatch.setattr(main.settings, "restrict_to_india", True)
     resp = client.get("/v1/search-report?lat=48.8566&lon=2.3522")
     assert resp.status_code == 400
     data = resp.json()
     assert data["error"] == "out_of_coverage"
     assert data["is_in_india"] is False
+
+
+def test_search_report_out_of_india_allowed(client, monkeypatch):
+    """GET /v1/search-report with coordinates outside India succeeds when restrict_to_india=False."""
+    from api import main
+    monkeypatch.setattr(main.settings, "restrict_to_india", False)
+    resp = client.get("/v1/search-report?lat=48.8566&lon=2.3522&q=Paris")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["is_in_india"] is False
+    assert data["location"]["display_name"] == "Paris"
 
 
 def test_search_report_full_success_demo_mode(client):
