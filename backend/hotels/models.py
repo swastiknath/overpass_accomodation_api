@@ -29,8 +29,23 @@ class Hotel(BaseModel):
     address: str | None = None
     website: str | None = None
     phone: str | None = None
+    email: str | None = None
+    reception_hours: str | None = None
     distance_to_query_km: float = 0.0
     review_snippet: str | None = None
+    women_safety_score: int | None = None
+    women_safety_features: list[str] = Field(default_factory=list)
+    fire_safety_score: int | None = None
+    fire_safety_features: list[str] = Field(default_factory=list)
+    proximity_points: list[dict[str, Any]] = Field(default_factory=list)
+    crawled_reviews: list[dict[str, Any]] = Field(default_factory=list)
+    booking_url: str | None = None
+    brand: str | None = None  # "OYO", "GoStays", or None
+    brand_tier: str | None = None  # e.g. "OYO Townhouse", "OYO Flagship", "GoStays Assured"
+    brand_amenities: list[str] = Field(default_factory=list)
+    is_hostel_or_solo: bool = False
+    nearest_hub: str | None = None
+    is_nearest_location: bool = False
 
 
 class AccessToHelp(BaseModel):

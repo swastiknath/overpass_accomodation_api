@@ -17,8 +17,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  ShieldCheck,
+  Compass,
+  Phone,
+  Clock,
 } from "lucide-react";
 import { HotelScored } from "@/types";
+import HotelDetailModal from "./HotelDetailModal";
 
 interface HotelsListProps {
   hotels: HotelScored[];
@@ -27,6 +32,10 @@ interface HotelsListProps {
   onAlphaChange: (newAlpha: number) => void;
   selectedHotelId: string | null;
   onSelectHotel: (id: string) => void;
+  radiusExpanded?: boolean;
+  originalRadiusKm?: number;
+  effectiveRadiusKm?: number;
+  radiusExpansionMessage?: string | null;
 }
 
 export default function HotelsList({
@@ -36,17 +45,28 @@ export default function HotelsList({
   onAlphaChange,
   selectedHotelId,
   onSelectHotel,
+  radiusExpanded = false,
+  originalRadiusKm = 5,
+  effectiveRadiusKm = 5,
+  radiusExpansionMessage = null,
 }: HotelsListProps) {
+  const [modalHotel, setModalHotel] = useState<HotelScored | null>(null);
   const [expandedHotelId, setExpandedHotelId] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [starsFilter, setStarsFilter] = useState<number>(0);
-  const [maxDistanceKm, setMaxDistanceKm] = useState<number>(50);
+  const [maxDistanceKm, setMaxDistanceKm] = useState<number>(999);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 6;
 
   // Filter hotels locally
   const filteredHotels = hotels.filter((h) => {
-    if (categoryFilter !== "all" && h.hotel.category !== categoryFilter) {
+    if (categoryFilter === "oyo") {
+      if (h.hotel.brand !== "OYO") return false;
+    } else if (categoryFilter === "gostays") {
+      if (h.hotel.brand !== "GoStays") return false;
+    } else if (categoryFilter === "solo") {
+      if (!h.hotel.is_hostel_or_solo && h.hotel.category !== "hostel") return false;
+    } else if (categoryFilter !== "all" && h.hotel.category !== categoryFilter) {
       return false;
     }
     if (starsFilter > 0 && (!h.hotel.stars || h.hotel.stars < starsFilter)) {
@@ -68,6 +88,18 @@ export default function HotelsList({
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
+
+  const hasNearestStays = hotels.some((h) => h.hotel.is_nearest_location);
+  const nearestHubNames = Array.from(
+    new Set(
+      hotels
+        .filter((h) => h.hotel.is_nearest_location && h.hotel.nearest_hub)
+        .map((h) => h.hotel.nearest_hub as string)
+    )
+  );
+  const oyoCount = hotels.filter((h) => h.hotel.brand === "OYO").length;
+  const goStaysCount = hotels.filter((h) => h.hotel.brand === "GoStays").length;
+  const soloCount = hotels.filter((h) => h.hotel.is_hostel_or_solo || h.hotel.category === "hostel").length;
 
   const toggleExpand = (id: string) => {
     setExpandedHotelId(expandedHotelId === id ? null : id);
@@ -127,6 +159,30 @@ export default function HotelsList({
           </div>
         </div>
 
+        {/* Radius Expansion & Distant Anchor Notice */}
+        {(radiusExpanded || hotels.some((h) => h.hotel.distance_to_query_km > originalRadiusKm * 1.2)) && (
+          <div
+            role="status"
+            className="flex items-start gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-950/60 via-zinc-950 to-amber-950/40 border border-amber-600/60 text-xs text-amber-200 shadow-xl shadow-amber-950/20"
+          >
+            <Compass className="h-5 w-5 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <strong className="font-bold text-amber-300 text-sm">
+                  Search Perimeter Expanded ({originalRadiusKm} km → {effectiveRadiusKm} km)
+                </strong>
+                <span className="px-2 py-0.5 rounded-full bg-amber-900/80 border border-amber-600/60 text-[10px] font-mono text-amber-300 font-bold uppercase">
+                  Distant Properties Included
+                </span>
+              </div>
+              <p className="text-amber-200/90 leading-relaxed">
+                {radiusExpansionMessage ||
+                  `No or few accommodations could be located within the immediate ${originalRadiusKm} km search radius of this location. The search perimeter was expanded up to ${effectiveRadiusKm} km to discover verified hotels, homestays, hostels, OYO, and GoStays in the surrounding region. Note that properties are located slightly distant from the center anchor as shown by the distance indicators below.`}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Same-Area Warning Notice */}
         {sameAreaWarning && (
           <div
@@ -143,6 +199,22 @@ export default function HotelsList({
           </div>
         )}
 
+        {/* Nearest Hub Locations Notice */}
+        {hasNearestStays && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 p-3 rounded-xl bg-cyan-950/30 border border-cyan-800/50 text-xs text-cyan-200"
+          >
+            <MapPin className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-semibold block text-cyan-300">
+                Nearest Location Stays Included
+              </strong>
+              Remote or high-altitude terrain detected with limited direct properties. Accommodations, hostels, OYO and GoStays have been dynamically expanded from nearest accessible hubs ({nearestHubNames.join(", ") || "surrounding valleys"}) via multi-source web crawlers.
+            </div>
+          </div>
+        )}
+
         {/* Filter Controls */}
         <div className="flex flex-wrap items-center gap-2.5 pt-1 text-xs">
           {/* Category Filter */}
@@ -151,7 +223,10 @@ export default function HotelsList({
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="bg-zinc-950 text-zinc-300 border border-zinc-800 rounded-lg px-2.5 py-1 focus:outline-none focus:border-zinc-700"
           >
-            <option value="all">All Categories</option>
+            <option value="all">All Accommodations ({hotels.length})</option>
+            {soloCount > 0 && <option value="solo">🎒 Hostels & Solo Travelers ({soloCount})</option>}
+            {oyoCount > 0 && <option value="oyo">🔴 OYO Verified Stays ({oyoCount})</option>}
+            {goStaysCount > 0 && <option value="gostays">✨ GoStays Certified ({goStaysCount})</option>}
             <option value="hotel">Hotels</option>
             <option value="guest_house">Guest Houses</option>
             <option value="hostel">Hostels</option>
@@ -176,10 +251,11 @@ export default function HotelsList({
             onChange={(e) => setMaxDistanceKm(parseFloat(e.target.value))}
             className="bg-zinc-950 text-zinc-300 border border-zinc-800 rounded-lg px-2.5 py-1 focus:outline-none focus:border-zinc-700"
           >
-            <option value="50">Any Distance</option>
-            <option value="2">Within 2 km</option>
+            <option value="999">Any Distance</option>
             <option value="5">Within 5 km</option>
-            <option value="10">Within 10 km</option>
+            <option value="15">Within 15 km</option>
+            <option value="30">Within 30 km</option>
+            <option value="50">Within 50 km</option>
           </select>
         </div>
       </div>
@@ -210,18 +286,43 @@ export default function HotelsList({
                 {/* Main Card Header */}
                 <div
                   className="p-4 cursor-pointer"
-                  onClick={() => onSelectHotel(item.hotel.id)}
+                  onClick={() => {
+                    onSelectHotel(item.hotel.id);
+                    setModalHotel(item);
+                  }}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     {/* Hotel Info */}
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-mono font-bold text-cyan-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-700">
                           #{actualIndex + 1}
                         </span>
                         <h4 className="text-sm font-bold text-white hover:text-cyan-300 transition">
                           {item.hotel.name}
                         </h4>
+
+                        {/* Brand & Specialty Badges */}
+                        {item.hotel.brand === "OYO" && (
+                          <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-black text-[10px] tracking-wider uppercase shadow-sm">
+                            {item.hotel.brand_tier || "OYO Rooms"}
+                          </span>
+                        )}
+                        {item.hotel.brand === "GoStays" && (
+                          <span className="px-2 py-0.5 rounded bg-gradient-to-r from-sky-500 to-amber-500 text-black font-extrabold text-[10px] tracking-wide uppercase shadow-sm">
+                            {item.hotel.brand_tier || "GoStays Certified"}
+                          </span>
+                        )}
+                        {item.hotel.is_hostel_or_solo && (
+                          <span className="px-2 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 text-[10px] font-semibold flex items-center gap-1">
+                            🎒 Solo & Hostel Friendly
+                          </span>
+                        )}
+                        {item.hotel.is_nearest_location && (
+                          <span className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-500/40 text-[10px] font-semibold flex items-center gap-1">
+                            <MapPin className="h-2.5 w-2.5" /> Nearest Hub: {item.hotel.nearest_hub || "Nearby"}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
@@ -247,6 +348,18 @@ export default function HotelsList({
                         {item.hotel.price_band && (
                           <span className="capitalize text-zinc-300 text-xs bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
                             {item.hotel.price_band.replace("_", " ")}
+                          </span>
+                        )}
+                        {item.hotel.phone && (
+                          <span className="flex items-center gap-1 text-cyan-400 font-mono text-[11px] bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40">
+                            <Phone className="h-2.5 w-2.5" />
+                            {item.hotel.phone}
+                          </span>
+                        )}
+                        {item.hotel.reception_hours && (
+                          <span className="hidden sm:flex items-center gap-1 text-emerald-400 text-[11px] bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-800/40">
+                            <Clock className="h-2.5 w-2.5" />
+                            {item.hotel.reception_hours}
                           </span>
                         )}
                         {item.limited_info && (
@@ -317,32 +430,48 @@ export default function HotelsList({
                   </div>
                 </div>
 
-                {/* Ranking Breakdown Trigger */}
-                <div className="bg-zinc-950 px-4 py-2 border-t border-zinc-900 flex items-center justify-between text-xs">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleExpand(item.hotel.id);
-                    }}
-                    className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium transition"
-                  >
-                    <span>Why is this property ranked #{actualIndex + 1}?</span>
-                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                  </button>
-
-                  {item.hotel.website && (
-                    <a
-                      href={item.hotel.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-zinc-400 hover:text-white flex items-center gap-1 transition"
-                      onClick={(e) => e.stopPropagation()}
+                {/* Ranking Breakdown & Modal Trigger */}
+                <div className="bg-zinc-950 px-4 py-2.5 border-t border-zinc-900 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setModalHotel(item);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 hover:text-white flex items-center gap-1.5 font-bold transition shadow-sm"
                     >
-                      <span>Website</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Women Safety & Reviews Modal</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpand(item.hotel.id);
+                      }}
+                      className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium transition"
+                    >
+                      <span>Why #{actualIndex + 1}?</span>
+                      {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {item.hotel.website && (
+                      <a
+                        href={item.hotel.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-zinc-400 hover:text-white flex items-center gap-1 transition"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span>Website</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 {/* Expandable Breakdown Drawer */}
@@ -462,6 +591,12 @@ export default function HotelsList({
           </div>
         </div>
       )}
+
+      {/* Hotel Detail Modal */}
+      <HotelDetailModal
+        hotelScored={modalHotel}
+        onClose={() => setModalHotel(null)}
+      />
     </div>
   );
 }

@@ -111,4 +111,28 @@ def test_mea_india_subregions():
     assert "Jammu & Kashmir" in coord_adv["sources"]["india_mea"]["country"]
 
 
+def test_pakistan_severe_warning_not_safe():
+    client = TravelAdvisoryClient()
+    pak_adv = client.get_advisory_for_location("Lahore, Pakistan")
+    assert pak_adv is not None
+    assert pak_adv["level"] == 4
+    assert pak_adv["status_color"] == "rose"
+    assert pak_adv["active_warning"] is True
+    assert "not going to be safe" in pak_adv["summary"].lower() or "not safe" in pak_adv["summary"].lower()
+    assert pak_adv["sources"]["india_mea"]["level"] == 4
+
+
+def test_india_domestic_green_safe():
+    client = TravelAdvisoryClient()
+    # Mumbai, Bengaluru, Goa
+    mum_adv = client.get_advisory_for_location("Mumbai, India")
+    assert mum_adv is not None
+    assert mum_adv["level"] == 1
+    assert mum_adv["status_color"] == "emerald"
+    assert mum_adv["is_domestic_safe"] is True
+    assert mum_adv["active_warning"] is True
+    assert "standard domestic" in mum_adv["summary"].lower()
+
+
+
 

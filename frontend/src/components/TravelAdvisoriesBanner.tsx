@@ -11,6 +11,7 @@ import {
   FileText,
   ChevronRight,
   Shield,
+  ShieldCheck,
 } from "lucide-react";
 import { TravelAdvisoryInfo, GovTravelAdvisoryItem } from "@/types";
 
@@ -23,27 +24,97 @@ export default function TravelAdvisoriesBanner({
   advisory,
   locationName,
 }: TravelAdvisoriesBannerProps) {
-  if (!advisory || !advisory.active_warning) {
+  if (!advisory) {
     return null;
   }
 
   const [activeTab, setActiveTab] = useState<"all" | "india_mea" | "us_state_dept" | "uk_fcdo">("all");
 
   const level = advisory.level || 1;
-  const isLevel4 = level >= 4;
-  const isLevel3 = level === 3;
+  const summaryLower = ((advisory.summary || "") + " " + (advisory.level_label || "")).toLowerCase();
+  const countryLower = (advisory.country || "").toLowerCase();
+  const locLower = (locationName || "").toLowerCase();
 
-  const containerStyles = isLevel4
-    ? "border-rose-600/80 bg-rose-950/40 text-rose-100 shadow-[0_0_35px_rgba(225,29,72,0.25)]"
-    : isLevel3
-    ? "border-amber-600/80 bg-amber-950/40 text-amber-100 shadow-[0_0_30px_rgba(217,119,6,0.20)]"
-    : "border-yellow-600/50 bg-yellow-950/30 text-yellow-100";
+  // Rule 1: For any Indian travelling to Pakistan, show the banner in red and mention that it's not going to be safe
+  const isPakistan =
+    countryLower.includes("pakistan") ||
+    locLower.includes("pakistan") ||
+    summaryLower.includes("pakistan");
 
-  const topBadgeStyles = isLevel4
-    ? "bg-rose-600 text-white border-rose-400 font-extrabold"
-    : isLevel3
-    ? "bg-amber-600 text-white border-amber-400 font-bold"
-    : "bg-yellow-600 text-black border-yellow-400 font-semibold";
+  // Rule 2: High advisory (Level 3 or above, or "avoid non essential travel", or "do not travel", or Pakistan)
+  const isAvoidNonEssential =
+    summaryLower.includes("avoid non essential") ||
+    summaryLower.includes("avoid non-essential") ||
+    summaryLower.includes("avoid all travel") ||
+    summaryLower.includes("do not travel") ||
+    summaryLower.includes("strictly advised against") ||
+    summaryLower.includes("not safe") ||
+    summaryLower.includes("not going to be safe") ||
+    summaryLower.includes("reconsider travel");
+
+  const isHighThreat = isPakistan || level >= 3 || isAvoidNonEssential;
+
+  // Rule 3: Within India, when MEA does not mention anything above domestic measures, show box in GREEN.
+  // Except for the specific places mentioned in the MEA (e.g., J&K, Ladakh, Manipur, border areas).
+  const isMEAExceptionPlace =
+    summaryLower.includes("jammu") ||
+    summaryLower.includes("kashmir") ||
+    summaryLower.includes("ladakh") ||
+    summaryLower.includes("manipur") ||
+    summaryLower.includes("border region") ||
+    locLower.includes("jammu") ||
+    locLower.includes("kashmir") ||
+    locLower.includes("srinagar") ||
+    locLower.includes("ladakh") ||
+    locLower.includes("leh") ||
+    locLower.includes("kargil") ||
+    locLower.includes("manipur") ||
+    locLower.includes("imphal");
+
+  const isDomesticIndia =
+    countryLower.includes("india") ||
+    advisory.matched_term === "india" ||
+    advisory.is_domestic_safe === true;
+
+  const isDomesticGreen =
+    isDomesticIndia && !isHighThreat && !isMEAExceptionPlace;
+
+  // If not domestic green, and not high threat, and active_warning is false, return null
+  if (!isDomesticGreen && !isHighThreat && !advisory.active_warning && !isMEAExceptionPlace) {
+    return null;
+  }
+
+  // Determine styling based on the user's exact requirements
+  let containerStyles = "border-yellow-600/50 bg-yellow-950/30 text-yellow-100";
+  let topBadgeStyles = "bg-yellow-600 text-black border-yellow-400 font-semibold";
+  let glowColor = "bg-yellow-600";
+  let badgeLabel = advisory.level_label || `Level ${level} Travel Advisory`;
+
+  if (isHighThreat) {
+    // Red banner for Level 3+, "avoid non-essential travels", or Pakistan
+    containerStyles = "border-rose-600/80 bg-rose-950/45 text-rose-100 shadow-[0_0_35px_rgba(225,29,72,0.30)] ring-1 ring-rose-500/40";
+    topBadgeStyles = "bg-rose-600 text-white border-rose-400 font-extrabold";
+    glowColor = "bg-rose-600";
+    if (isPakistan) {
+      badgeLabel = "CRITICAL ADVISORY • NOT SAFE FOR INDIAN NATIONALS";
+    } else if (level >= 4) {
+      badgeLabel = advisory.level_label || "Level 4: Do Not Travel";
+    } else {
+      badgeLabel = advisory.level_label || "Level 3: Avoid All Non-Essential Travel";
+    }
+  } else if (isDomesticGreen) {
+    // Green box for within India when MEA mentions standard domestic measures only
+    containerStyles = "border-emerald-600/70 bg-emerald-950/35 text-emerald-100 shadow-[0_0_30px_rgba(16,185,129,0.20)] ring-1 ring-emerald-500/30";
+    topBadgeStyles = "bg-emerald-600 text-white border-emerald-400 font-bold";
+    glowColor = "bg-emerald-600";
+    badgeLabel = "DOMESTIC TRAVEL ADVISORY • STANDARD MEASURES (SAFE)";
+  } else if (level === 2 || isMEAExceptionPlace) {
+    // Amber / Yellow for specific regional guidance in India (e.g. J&K, Manipur) or international Level 2
+    containerStyles = "border-amber-600/80 bg-amber-950/40 text-amber-100 shadow-[0_0_30px_rgba(217,119,6,0.20)]";
+    topBadgeStyles = "bg-amber-600 text-white border-amber-400 font-bold";
+    glowColor = "bg-amber-600";
+    badgeLabel = advisory.level_label || "Level 2: Exercise Increased Caution / Route Guidance";
+  }
 
   const advisoriesList: GovTravelAdvisoryItem[] =
     advisory.advisories_list ||
@@ -54,14 +125,18 @@ export default function TravelAdvisoriesBanner({
       : []);
 
   const getStatusBadge = (lvl: number, label: string) => {
-    if (lvl >= 4) {
-      return "bg-rose-500/20 text-rose-300 border-rose-500/60";
+    const lbl = (label || "").toLowerCase();
+    if (isPakistan || lvl >= 4 || lbl.includes("not safe") || lbl.includes("do not travel") || lbl.includes("against all travel")) {
+      return "bg-rose-500/25 text-rose-200 border-rose-500/70 font-bold";
     }
-    if (lvl === 3) {
-      return "bg-amber-500/20 text-amber-300 border-amber-500/60";
+    if (lvl >= 3 || lbl.includes("avoid non essential") || lbl.includes("avoid non-essential")) {
+      return "bg-rose-500/20 text-rose-300 border-rose-500/60 font-semibold";
+    }
+    if (isDomesticGreen) {
+      return "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-semibold";
     }
     if (lvl === 2) {
-      return "bg-yellow-500/20 text-yellow-300 border-yellow-500/50";
+      return "bg-amber-500/20 text-amber-300 border-amber-500/60";
     }
     return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
   };
@@ -73,21 +148,19 @@ export default function TravelAdvisoriesBanner({
     >
       {/* Background ambient gradient glow */}
       <div
-        className={`absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25 pointer-events-none ${
-          isLevel4 ? "bg-rose-600" : isLevel3 ? "bg-amber-600" : "bg-yellow-600"
-        }`}
+        className={`absolute -right-24 -top-24 w-72 h-72 rounded-full blur-3xl opacity-25 pointer-events-none ${glowColor}`}
       />
 
       {/* Main Header */}
       <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/10 pb-3.5">
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-xl bg-black/60 border border-white/10 shrink-0 mt-0.5">
-            {isLevel4 ? (
+            {isHighThreat ? (
               <AlertOctagon className="h-6 w-6 text-rose-400 animate-pulse" />
-            ) : isLevel3 ? (
-              <ShieldAlert className="h-6 w-6 text-amber-400" />
+            ) : isDomesticGreen ? (
+              <ShieldCheck className="h-6 w-6 text-emerald-400" />
             ) : (
-              <AlertTriangle className="h-6 w-6 text-yellow-400" />
+              <ShieldAlert className="h-6 w-6 text-amber-400" />
             )}
           </div>
 
@@ -97,14 +170,22 @@ export default function TravelAdvisoriesBanner({
                 className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs uppercase tracking-wider border shadow-sm ${topBadgeStyles}`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                {advisory.level_label || `Level ${level} Travel Warning`}
+                {badgeLabel}
               </span>
               <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
-                Official Multi-Government Travel Bulletins &bull; {advisory.country}
+                {isDomesticGreen
+                  ? "National Domestic Safety Protocol • India"
+                  : isPakistan
+                  ? "High-Risk Diplomatic Security Alert • Pakistan"
+                  : `Official Multi-Government Travel Bulletins • ${advisory.country}`}
               </span>
             </div>
             <h3 className="text-base sm:text-lg font-bold text-white tracking-tight mt-1">
-              Active Diplomatic Advisories: {advisory.country}
+              {isPakistan
+                ? "Travel to Pakistan: Not Safe for Indian Nationals"
+                : isDomesticGreen
+                ? `Domestic Travel Status: ${locationName || advisory.country} (Safe / Normal Measures)`
+                : `Active Diplomatic Advisories: ${advisory.country}`}
             </h3>
           </div>
         </div>
@@ -118,7 +199,7 @@ export default function TravelAdvisoriesBanner({
               activeTab === "all" ? "bg-white/20 text-white font-bold" : "text-zinc-400 hover:text-white"
             }`}
           >
-            All Authorities (3)
+            All Authorities ({advisoriesList.length || 3})
           </button>
           <button
             type="button"
@@ -153,6 +234,39 @@ export default function TravelAdvisoriesBanner({
         </div>
       </div>
 
+      {/* Prominent Pakistan Security Warning Notice */}
+      {isPakistan && (
+        <div className="relative z-10 p-3.5 rounded-xl bg-rose-950/90 border border-rose-500/60 text-xs text-rose-100 flex items-start gap-2.5 shadow-md">
+          <AlertOctagon className="h-5 w-5 text-rose-400 shrink-0 mt-0.5 animate-pulse" />
+          <div className="space-y-1">
+            <strong className="font-bold text-rose-200 block text-sm">
+              Urgent Advisory: Travel to Pakistan is not going to be safe for Indian Nationals
+            </strong>
+            <p className="leading-relaxed text-rose-200/90">
+              In view of severe bilateral tensions, active military border friction, high terrorism risks,
+              heightened surveillance, and severely restricted consular assistance, Indian passport holders
+              are strictly advised that traveling to Pakistan is not safe and strongly advised against.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Domestic Green Notice */}
+      {isDomesticGreen && (
+        <div className="relative z-10 p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-xs text-emerald-100 flex items-start gap-2.5 shadow-sm">
+          <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <strong className="font-bold text-emerald-200 block text-xs">
+              Domestic Travel Measures: Standard / Low Risk
+            </strong>
+            <p className="leading-relaxed text-emerald-200/90 text-[11px]">
+              Destination is within India and the Ministry of External Affairs (MEA) and NDMA indicate standard
+              domestic safety measures. No elevated travel advisories or regional security restrictions apply.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Advisory Cards Grid */}
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-4">
         {advisoriesList
@@ -172,7 +286,11 @@ export default function TravelAdvisoriesBanner({
                 key={item.authority || idx}
                 className={`rounded-xl p-4 bg-black/75 border transition flex flex-col justify-between space-y-3 ${
                   isMEA
-                    ? "border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.12)] ring-1 ring-amber-500/30"
+                    ? isHighThreat
+                      ? "border-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.15)] ring-1 ring-rose-500/30"
+                      : isDomesticGreen
+                      ? "border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.12)] ring-1 ring-emerald-500/30"
+                      : "border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.12)] ring-1 ring-amber-500/30"
                     : "border-zinc-800 hover:border-zinc-700"
                 }`}
               >
@@ -198,13 +316,17 @@ export default function TravelAdvisoriesBanner({
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badgeClass}`}
                     >
                       <Shield className="h-3 w-3" />
-                      {item.level_label}
+                      {isPakistan && isMEA
+                        ? "Not Safe for Indian Nationals"
+                        : item.level_label}
                     </span>
                   </div>
 
                   {/* Summary Text */}
                   <p className="text-xs text-zinc-300 leading-relaxed">
-                    {item.summary}
+                    {isPakistan && isMEA
+                      ? "Travel to Pakistan is not going to be safe for Indian nationals. Bilateral travel is subject to extreme security risks and high diplomatic warnings."
+                      : item.summary}
                   </p>
 
                   {/* Consular Helpline & Embassy Contact */}

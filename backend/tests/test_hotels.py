@@ -213,3 +213,106 @@ def test_per_hotel_scoring_makes_zero_connector_calls_locally(sample_hotels, sam
     # Check that differentiating factors were identified for h3 (which is next to flood)
     h3_scored = next(h for h in ranked if h.hotel.id == "h3")
     assert any(df.hazard_type == "flood" for df in h3_scored.differentiating_factors or h3_scored.top_contributions)
+
+
+@pytest.mark.asyncio
+async def test_foursquare_provider_instantiation_and_search():
+    from hotels.provider import FoursquareProvider
+    provider = FoursquareProvider()
+    assert provider is not None
+    # Test search with sample coords
+    hotels = await provider.search(lat=28.6139, lon=77.2090, radius_km=5.0, limit=10, location_name="Connaught Place, New Delhi")
+    assert isinstance(hotels, list)
+    if hotels:
+        first = hotels[0]
+        assert first.name is not None
+        assert first.lat != 0.0
+        assert hasattr(first, "phone")
+        help_map = await provider.get_access_to_help(28.6139, 77.2090, hotels[:3])
+        assert isinstance(help_map, dict)
+        assert first.id in help_map
+
+
+@pytest.mark.asyncio
+async def test_no_oyo_or_false_positives_in_pakistan():
+    from hotels.crawler import is_valid_traveler_accommodation, is_pakistan_location, synthesize_contact_info
+    
+    # 1. Verify Pakistan detection
+    assert is_pakistan_location("Lahore, Pakistan", 31.52, 74.35) is True
+    assert is_pakistan_location("Karachi", 24.86, 67.0) is True
+    assert is_pakistan_location("Islamabad") is True
+    assert is_pakistan_location("New Delhi, India", 28.61, 77.20) is False
+
+    # 2. Verify OYO and GoStays rejection outside India / in Pakistan
+    assert is_valid_traveler_accommodation("OYO 1234 Residency", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("GoStays Lahore Comfort", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("Zostel Lahore", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("OYO 1234 Residency", "Mumbai, India", 19.07, 72.87) is True
+
+    # 3. Verify rejection of institutional student/staff dorms and streets
+    assert is_valid_traveler_accommodation("Hindu Hostel Street", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("KEMU Hostel Ground", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("Nurses Hostel", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("Doctors Hostel", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("GCU Girls Hostel", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("UVAS Boys Hostel", "Lahore, Pakistan", 31.52, 74.35) is False
+    assert is_valid_traveler_accommodation("Student Mess & Hostel", "Lahore, Pakistan", 31.52, 74.35) is False
+
+    # 4. Verify valid traveler accommodations pass
+    assert is_valid_traveler_accommodation("Pearl Continental Lahore", "Lahore, Pakistan", 31.52, 74.35) is True
+    assert is_valid_traveler_accommodation("Avari Hotel Lahore", "Lahore, Pakistan", 31.52, 74.35) is True
+    assert is_valid_traveler_accommodation("Lahore Backpackers Hostel", "Lahore, Pakistan", 31.52, 74.35) is True
+
+    # 5. Verify unlisted international properties do NOT fabricate fake phone/email
+    c_pk = synthesize_contact_info("Pearl Continental", location_name="Lahore, Pakistan", source_id="123")
+    assert c_pk["phone"] is None, "Must not fabricate fake phone number"
+    assert c_pk["email"] is None, "Must not fabricate fake email address"
+    assert "Lahore" in c_pk["address"]
+    assert "google.com/travel/hotels" in c_pk["website"]
+
+    # 6. Verify verified Indian corporate partner brands retain valid hotline
+    c_in = synthesize_contact_info("OYO Flagship Connaught", brand="OYO", location_name="New Delhi, India")
+    assert c_in["phone"] == "+91 124 620 1611"
+    assert c_in["email"] == "bookings@oyorooms.com"
+
+
+@pytest.mark.asyncio
+async def test_no_fake_or_mock_reviews_served():
+    """Verify crawler and summarizer never inject mock review templates or fake reviewer personas."""
+    from hotels.crawler import FirecrawlerHotelClient
+    from hotels.review_summarizer import HotelReviewSummarizer
+    from hotels.models import Hotel
+
+    crawler = FirecrawlerHotelClient()
+    # Mock crawler review query for obscure test property
+    res = await crawler.crawl_live_hotel_reviews(
+        hotel_name="Test Nonexistent Lodge 99999",
+        location_name="Remote Pass, Himalayas",
+        lat=34.0,
+        lon=75.0,
+        hotel_id="test_9999",
+    )
+
+    # Must be a list of crawled reviews or empty if none online - never fake templates
+    crawled = res.get("crawled_reviews", [])
+    assert isinstance(crawled, list)
+    for r in crawled:
+        # None of the old fake personas
+        assert r.get("reviewer_name") not in ("Priya Sharma", "Marcus Vance", "Elena Rostova")
+        assert "Pristine cleanliness and 24/7 guarded security" not in r.get("snippet", "")
+
+    # Test summarizer without crawled reviews sets review_snippet to None
+    summarizer = HotelReviewSummarizer()
+    h = Hotel(
+        id="h_test_none",
+        name="Mountain Peak Cottage",
+        lat=32.0,
+        lon=76.0,
+        source="osm",
+        source_id="1",
+        category="hotel",
+        crawled_reviews=[],
+    )
+    summarized = await summarizer.summarize_hotels([h], "Manali, Himachal Pradesh")
+    assert summarized[0].review_snippet is None
+

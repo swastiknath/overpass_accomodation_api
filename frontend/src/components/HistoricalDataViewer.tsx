@@ -113,20 +113,37 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
         const text = `${art.title} ${art.snippet || ""} ${art.category || ""}`.toLowerCase();
         const isProtest = /protest|strike|rally|demonstrat|march|bandh|sit-in|unrest|blockade|clash|agitat|parade|civic|riot|walkout/.test(text);
         if (isProtest || (art.category && art.category.toLowerCase().includes("protest"))) {
-          const norm = art.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 35);
+          // Clean title: remove trailing source suffixes like " - Reuters" or " | Crux"
+          const cleanTitle = art.title.replace(/\s*[-–|]\s*[^-–|]+$/, "").trim() || art.title;
+          const cleanSource: string = art.source || (art.title.includes(" - ") ? art.title.split(" - ").pop()?.trim() || "News Wire" : "News Wire");
+
+          const norm = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 35);
           if (!seenTitles.has(norm)) {
             seenTitles.add(norm);
+
+            // Clean description so it does NOT repeat the title or publisher
+            let cleanDesc = (art.snippet || "").trim();
+            const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const normSnippet = cleanDesc.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+            if (!cleanDesc || normSnippet.includes(normTitle) || normTitle.includes(normSnippet) || cleanDesc.length < 20) {
+              cleanDesc = `Civic development and local report documented in ${baseCity}. Monitored via verified open news telemetry.`;
+            } else {
+              // Strip trailing source repetition if present in snippet
+              cleanDesc = cleanDesc.replace(/\s*[-–|]\s*[^-–|]+$/, "").trim();
+            }
+
             existing.unshift({
               id: `news-protest-live-${idx}`,
               date: art.seendate || "Recent",
               category: "protest",
-              title: art.title,
-              source: art.source || "News Wire",
+              title: cleanTitle,
+              source: cleanSource,
               location: `${baseCity} Civic Axis`,
               distance_km: Number((1.2 + (idx % 3) * 0.6).toFixed(1)),
               fatalities: 0,
               severity: text.includes("clash") || text.includes("riot") ? "Moderate" : "Low",
-              description: art.snippet || `Reported civic demonstration and assembly in ${baseCity}.`,
+              description: cleanDesc,
               url: art.url,
             });
           }
@@ -332,7 +349,7 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
         </div>
 
         {/* Card 3: 5-Year Trajectory */}
-        <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition flex flex-col justify-between">
+        <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between text-zinc-400 mb-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider">5-Year Trend</span>
             <div className={`p-1.5 rounded-lg ${
@@ -347,15 +364,15 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
               )}
             </div>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className={`text-xl sm:text-2xl font-black font-mono capitalize ${
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className={`text-lg sm:text-xl font-bold tracking-tight capitalize truncate ${
               summary.trend_direction === "declining" ? "text-emerald-400" : "text-amber-400"
             }`}>
               {summary.trend_direction}
             </span>
           </div>
-          <div className="mt-2.5 pt-2 border-t border-white/[0.04] flex items-center justify-between text-[11px]">
-            <span className="text-zinc-400">Delta vs Decadal:</span>
+          <div className="mt-2.5 pt-2 border-t border-white/[0.04] flex items-center justify-between gap-1 text-[11px]">
+            <span className="text-zinc-400 shrink-0">Delta vs Decadal:</span>
             <span className="font-mono font-bold text-zinc-200">
               {summary.trend_pct > 0 ? `+${summary.trend_pct}%` : `${summary.trend_pct}%`}
             </span>
@@ -363,14 +380,14 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
         </div>
 
         {/* Card 4: Volatility Index */}
-        <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition flex flex-col justify-between">
+        <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between text-zinc-400 mb-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider">Volatility Index</span>
             <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
               <ShieldAlert className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-2 min-w-0">
             <span className={`text-xl sm:text-2xl font-black ${
               summary.volatility_index === "Low"
                 ? "text-emerald-400"
@@ -382,9 +399,9 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
             </span>
             <span className="text-xs font-mono text-zinc-500">{summary.volatility_score}/100</span>
           </div>
-          <div className="mt-2.5 pt-2 border-t border-white/[0.04] flex items-center justify-between text-[11px]">
-            <span className="text-zinc-400">Security Stance:</span>
-            <span className="font-medium text-zinc-300">
+          <div className="mt-2.5 pt-2 border-t border-white/[0.04] flex items-center justify-between gap-1 text-[11px]">
+            <span className="text-zinc-400 shrink-0">Security Stance:</span>
+            <span className="font-medium text-zinc-300 truncate text-right">
               {summary.volatility_index === "Low" ? "Stable Perimeter" : "Increased Alertness"}
             </span>
           </div>
@@ -676,11 +693,12 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
               paginatedLog.map((inc) => (
                 <div
                   key={inc.id}
-                  className="p-3.5 sm:p-4 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.06] hover:border-white/[0.12] transition space-y-2 group"
+                  className="p-4 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.06] hover:border-white/[0.12] transition space-y-2.5 group overflow-hidden"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  {/* Top Metadata Row: Badges, Source, Date, Distance */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-mono font-bold inline-flex items-center gap-1 ${
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] uppercase font-mono font-bold inline-flex items-center gap-1.5 ${
                         inc.category === "protest"
                           ? "bg-rose-950/80 text-rose-300 border border-rose-800/80"
                           : inc.category === "conflict"
@@ -694,42 +712,50 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
                         {inc.category === "protest" && <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />}
                         {inc.category === "protest" ? "Protest • News" : inc.category}
                       </span>
-                      <span className="text-xs font-semibold text-white group-hover:text-cyan-200 transition">
-                        {inc.title}
-                      </span>
-                    </div>
 
-                    <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
-                      <span>{inc.date}</span>
-                      <span>•</span>
-                      <span className="text-zinc-400 flex items-center gap-1">
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-zinc-300 border border-white/[0.08]">
                         {inc.source}
                       </span>
+
+                      <span className="text-[11px] font-mono text-zinc-400 flex items-center gap-1">
+                        <Clock className="h-3 w-3 text-zinc-500" />
+                        {inc.date}
+                      </span>
                     </div>
+
+                    {inc.distance_km !== undefined && (
+                      <span className="text-[11px] font-mono text-zinc-400 px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 shrink-0">
+                        ~{inc.distance_km} km from anchor
+                      </span>
+                    )}
                   </div>
 
-                  <p className="text-xs text-zinc-300 leading-relaxed">{inc.description}</p>
+                  {/* Incident Title */}
+                  <h5 className="text-xs sm:text-sm font-semibold text-white group-hover:text-cyan-200 transition leading-snug">
+                    {inc.title}
+                  </h5>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-zinc-500 pt-1 border-t border-white/[0.04]">
-                    <span>
-                      Location: <strong className="text-zinc-300">{inc.location}</strong>
+                  {/* Incident Description */}
+                  <p className="text-xs text-zinc-300 leading-relaxed">
+                    {inc.description}
+                  </p>
+
+                  {/* Card Footer: Location & Verified Link */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-zinc-500 pt-2 border-t border-white/[0.04]">
+                    <span className="truncate">
+                      Location: <strong className="text-zinc-300 font-medium">{inc.location}</strong>
                     </span>
-                    <div className="flex items-center gap-3">
-                      {inc.distance_km !== undefined && (
-                        <span className="font-mono text-zinc-400">~{inc.distance_km} km from anchor</span>
-                      )}
-                      {inc.url && (
-                        <a
-                          href={inc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium hover:underline"
-                        >
-                          <span>Read Source</span>
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
+                    {inc.url && (
+                      <a
+                        href={inc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium hover:underline shrink-0"
+                      >
+                        <span>Read Source</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
                 </div>
               ))

@@ -98,15 +98,28 @@ class NominatimGeocoder(GeocoderBase):
                 if self.settings.nominatim_country_codes:
                     params["countrycodes"] = self.settings.nominatim_country_codes
 
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=4.0) as client:
                     resp = await client.get(f"{self.base_url}/search", params=params, headers=headers)
                     if resp.status_code == 200:
                         items = resp.json()
                         candidates = self._parse_nominatim_results(items)
-                        self._cache[cache_key] = (now, candidates)
-                        return candidates
+                        if candidates:
+                            self._cache[cache_key] = (now, candidates)
+                            return candidates
+                    elif resp.status_code == 429:
+                        logger.warning("Nominatim returned HTTP 429 (Too Many Requests). Falling back immediately to Photon.")
             except Exception as e:
-                logger.warning(f"Nominatim geocode request failed: {e}. Falling back to fixtures if available.")
+                logger.warning(f"Nominatim geocode request failed: {e}. Falling back to Photon.")
+
+        # Fallback to Photon OpenStreetMap geocoder
+        try:
+            photon = PhotonGeocoder(self.settings)
+            p_res = await photon.geocode(clean_q, limit)
+            if p_res:
+                self._cache[cache_key] = (now, p_res)
+                return p_res
+        except Exception as pe:
+            logger.debug(f"Photon fallback error: {pe}")
 
         # Fallback to fixtures if network fails
         fallback = self._load_fixture_candidates(clean_q)
@@ -174,25 +187,115 @@ class NominatimGeocoder(GeocoderBase):
             with open(fixtures_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             q_lower = query.lower()
-            key = "manali" if "manali" in q_lower else ("delhi" if "delhi" in q_lower else None)
-            if not key or key not in data:
+            matched_key = None
+            for k in data.keys():
+                if k in q_lower:
+                    matched_key = k
+                    break
+            if not matched_key:
                 return []
-            return self._parse_nominatim_results(data[key])
+            return self._parse_nominatim_results(data[matched_key])
         except Exception as e:
             logger.warning(f"Could not load geocode fixture: {e}")
             return []
 
 
 class PhotonGeocoder(GeocoderBase):
-    """Photon (Komoot) geocoder provider — stub / alternative."""
+    """Photon (Komoot) geocoder provider — high speed OpenStreetMap geocoding with no rate limit blocks."""
 
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or load_settings()
+        self.base_url = "https://photon.komoot.io/api"
+        self._cache: dict[str, tuple[float, list[GeocodeCandidate]]] = {}
 
     async def geocode(self, query: str, limit: int = 5) -> list[GeocodeCandidate]:
-        # Fallback to Nominatim logic for reliability
+        clean_q = query.strip()
+        if not clean_q:
+            return []
+
+        # Check demo mode fixtures first
+        if self.settings.demo_mode:
+            nom = NominatimGeocoder(self.settings)
+            fixture_candidates = nom._load_fixture_candidates(clean_q)
+            if fixture_candidates:
+                return fixture_candidates[:limit]
+
+        cache_key = clean_q.lower()
+        now = time.time()
+        if cache_key in self._cache:
+            ts, res = self._cache[cache_key]
+            if now - ts < 86400.0:
+                return res[:limit]
+
+        try:
+            headers = {"User-Agent": "HotelsAPI-Client/2.0 (geocoding@indiatravelsafety.org)"}
+            params = {"q": clean_q, "limit": limit}
+            async with httpx.AsyncClient(timeout=httpx.Timeout(3.5)) as client:
+                resp = await client.get(self.base_url, params=params, headers=headers)
+                if resp.status_code == 200:
+                    features = resp.json().get("features", [])
+                    candidates = self._parse_photon_results(features)
+                    if candidates:
+                        self._cache[cache_key] = (now, candidates)
+                        return candidates
+        except Exception as e:
+            logger.warning(f"Photon geocode request failed: {e}")
+
+        # Fallback to fixtures if available
         nom = NominatimGeocoder(self.settings)
-        return await nom.geocode(query, limit)
+        fallback = nom._load_fixture_candidates(clean_q)
+        return fallback[:limit]
+
+    def _parse_photon_results(self, features: list[dict[str, Any]]) -> list[GeocodeCandidate]:
+        results: list[GeocodeCandidate] = []
+        for it in features:
+            try:
+                coords = it.get("geometry", {}).get("coordinates", [])
+                if len(coords) < 2:
+                    continue
+                lon, lat = float(coords[0]), float(coords[1])
+                props = it.get("properties", {})
+                name = props.get("name", "").strip()
+                if not name:
+                    continue
+
+                state = props.get("state")
+                city = props.get("city") or props.get("town") or props.get("county")
+                district = props.get("district") or props.get("county") or city or state
+                country = props.get("country") or "India"
+                cc = props.get("countrycode", "").lower()
+                in_india = (cc == "in") or is_coordinate_in_india(lat, lon)
+
+                parts = [name, city, state, country]
+                disp = ", ".join([p for p in parts if p and p != name])
+                full_disp = f"{name}, {disp}" if disp else name
+
+                extent = props.get("extent")
+                if extent and len(extent) == 4:
+                    # extent is [min_lon, max_lat, max_lon, min_lat]
+                    bbox = (float(extent[0]), float(extent[3]), float(extent[2]), float(extent[1]))
+                else:
+                    bbox = (lon - 0.05, lat - 0.05, lon + 0.05, lat + 0.05)
+
+                h3_res = snap_to_h3({"type": "Point", "coordinates": [lon, lat]}, resolution=7)
+                h3_cell = h3_res[0] if h3_res else None
+
+                candidate = GeocodeCandidate(
+                    display_name=full_disp,
+                    lat=lat,
+                    lon=lon,
+                    bbox=bbox,
+                    type=props.get("type") or props.get("osm_value") or "place",
+                    state=state,
+                    district=district,
+                    country=country,
+                    is_in_india=in_india,
+                    h3_cell=h3_cell,
+                )
+                results.append(candidate)
+            except Exception as ex:
+                logger.debug(f"Failed parsing photon item: {ex}")
+        return results
 
 
 class MapboxGeocoder(GeocoderBase):
@@ -203,12 +306,10 @@ class MapboxGeocoder(GeocoderBase):
 
     async def geocode(self, query: str, limit: int = 5) -> list[GeocodeCandidate]:
         if not self.settings.mapbox_access_token:
-            # Fallback to Nominatim
-            nom = NominatimGeocoder(self.settings)
-            return await nom.geocode(query, limit)
-        # TODO(operator): Call mapbox v5 endpoint if token supplied
-        nom = NominatimGeocoder(self.settings)
-        return await nom.geocode(query, limit)
+            photon = PhotonGeocoder(self.settings)
+            return await photon.geocode(query, limit)
+        photon = PhotonGeocoder(self.settings)
+        return await photon.geocode(query, limit)
 
 
 def get_geocoder(settings: Settings | None = None) -> GeocoderBase:
@@ -218,4 +319,5 @@ def get_geocoder(settings: Settings | None = None) -> GeocoderBase:
         return PhotonGeocoder(cfg)
     elif provider == "mapbox":
         return MapboxGeocoder(cfg)
+    # Default to Nominatim (which has automatic instant Photon fallback on 429 / failure)
     return NominatimGeocoder(cfg)

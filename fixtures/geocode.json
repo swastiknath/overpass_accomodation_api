@@ -38,5 +38,119 @@
         "country_code": "in"
       }
     }
+  ],
+  "kullu": [
+    {
+      "place_id": 1003,
+      "osm_type": "relation",
+      "osm_id": 123457,
+      "lat": "31.9579",
+      "lon": "77.1095",
+      "display_name": "Kullu, Himachal Pradesh, India",
+      "type": "town",
+      "importance": 0.8,
+      "boundingbox": ["31.90", "32.00", "77.05", "77.15"],
+      "address": {
+        "town": "Kullu",
+        "district": "Kullu",
+        "state": "Himachal Pradesh",
+        "country": "India",
+        "country_code": "in"
+      }
+    }
+  ],
+  "sindh": [
+    {
+      "place_id": 2001,
+      "osm_type": "relation",
+      "osm_id": 555001,
+      "lat": "25.8943",
+      "lon": "68.5247",
+      "display_name": "Sindh, Pakistan",
+      "type": "state",
+      "importance": 0.85,
+      "boundingbox": ["23.69", "28.51", "66.65", "71.12"],
+      "address": {
+        "state": "Sindh",
+        "country": "Pakistan",
+        "country_code": "pk"
+      }
+    }
+  ],
+  "karachi": [
+    {
+      "place_id": 2002,
+      "osm_type": "relation",
+      "osm_id": 555002,
+      "lat": "24.8607",
+      "lon": "67.0011",
+      "display_name": "Karachi, Sindh, Pakistan",
+      "type": "city",
+      "importance": 0.92,
+      "boundingbox": ["24.70", "25.05", "66.85", "67.25"],
+      "address": {
+        "city": "Karachi",
+        "state": "Sindh",
+        "country": "Pakistan",
+        "country_code": "pk"
+      }
+    }
+  ],
+  "lahore": [
+    {
+      "place_id": 2003,
+      "osm_type": "relation",
+      "osm_id": 555003,
+      "lat": "31.5204",
+      "lon": "74.3587",
+      "display_name": "Lahore, Punjab, Pakistan",
+      "type": "city",
+      "importance": 0.9,
+      "boundingbox": ["31.40", "31.65", "74.20", "74.50"],
+      "address": {
+        "city": "Lahore",
+        "state": "Punjab",
+        "country": "Pakistan",
+        "country_code": "pk"
+      }
+    }
+  ],
+  "paris": [
+    {
+      "place_id": 3001,
+      "osm_type": "relation",
+      "osm_id": 666001,
+      "lat": "48.8566",
+      "lon": "2.3522",
+      "display_name": "Paris, Île-de-France, France",
+      "type": "city",
+      "importance": 0.98,
+      "boundingbox": ["48.81", "48.90", "2.22", "2.47"],
+      "address": {
+        "city": "Paris",
+        "state": "Île-de-France",
+        "country": "France",
+        "country_code": "fr"
+      }
+    }
+  ],
+  "london": [
+    {
+      "place_id": 3002,
+      "osm_type": "relation",
+      "osm_id": 666002,
+      "lat": "51.5074",
+      "lon": "-0.1278",
+      "display_name": "London, Greater London, England, United Kingdom",
+      "type": "city",
+      "importance": 0.98,
+      "boundingbox": ["51.28", "51.69", "-0.51", "0.33"],
+      "address": {
+        "city": "London",
+        "state": "Greater London",
+        "country": "United Kingdom",
+        "country_code": "gb"
+      }
+    }
   ]
 }

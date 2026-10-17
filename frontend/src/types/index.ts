@@ -50,6 +50,24 @@ export interface RankBreakdown {
   explanation: string;
 }
 
+export interface ProximityPoint {
+  name: string;
+  distance_km: number;
+  type: string;
+  walk_min?: number;
+}
+
+export interface CrawledReview {
+  source: string;
+  snippet: string;
+  sentiment: string;
+  date?: string;
+  reviewer_type?: string;
+  reviewer_name?: string;
+  rating?: number;
+  badge?: string;
+}
+
 export interface Hotel {
   id: string;
   name: string;
@@ -66,8 +84,23 @@ export interface Hotel {
   address?: string | null;
   website?: string | null;
   phone?: string | null;
+  email?: string | null;
+  reception_hours?: string | null;
   distance_to_query_km: number;
   review_snippet?: string | null;
+  women_safety_score?: number | null;
+  women_safety_features?: string[];
+  fire_safety_score?: number | null;
+  fire_safety_features?: string[];
+  proximity_points?: ProximityPoint[];
+  crawled_reviews?: CrawledReview[];
+  booking_url?: string | null;
+  brand?: string | null;
+  brand_tier?: string | null;
+  brand_amenities?: string[];
+  is_hostel_or_solo?: boolean;
+  nearest_hub?: string | null;
+  is_nearest_location?: boolean;
 }
 
 export interface WeatherDayForecast {
@@ -150,8 +183,11 @@ export interface SearchReport {
     radius_km: number;
     district?: string | null;
     state?: string | null;
+    country?: string | null;
+    is_in_india?: boolean;
     bbox: [number, number, number, number];
   };
+  is_in_india?: boolean;
   area_score: {
     safety_score: number;
     band: ScoreBand;
@@ -173,8 +209,63 @@ export interface SearchReport {
   weather_and_air_quality?: WeatherAndAirQuality;
   travel_advisories?: TravelAdvisoryInfo | null;
   historical_stats?: HistoricalStats;
+  crime_statistics?: CrimeStatistics;
   disclaimer: string;
   disambiguation_candidates?: GeocodeCandidate[];
+  radius_expanded?: boolean;
+  original_radius_km?: number;
+  effective_radius_km?: number;
+  radius_expansion_message?: string | null;
+}
+
+export interface CrimeYearData {
+  year: string;
+  total_cognizable_crimes: number;
+  violent_crimes: number;
+  property_thefts: number;
+  cyber_fraud: number;
+  crime_rate_per_100k: number;
+  safety_clearance_rate: number;
+}
+
+export interface CrimeCategoryDetail {
+  category: string;
+  count: number;
+  rate_per_100k: number;
+  share_pct: number;
+  trend: "declining" | "stable" | "increasing";
+  severity: "low" | "moderate" | "high";
+}
+
+export interface RealtimeCrimeIncident {
+  title: string;
+  url: string;
+  source: string;
+  published_at?: string;
+  category?: string;
+  severity?: "low" | "moderate" | "high";
+  snippet?: string;
+  location?: string;
+}
+
+export interface CrimeStatistics {
+  source_agency: string;
+  district_or_region: string;
+  country: string;
+  timeframe: string;
+  headline: string;
+  overall_safety_index: number;
+  safety_band: "High Safety" | "Moderate Caution" | "Heightened Vigilance" | "Elevated Risk";
+  violent_crime_risk: "Low" | "Moderate" | "Elevated";
+  tourist_night_safety: "High" | "Moderate" | "Caution Advised";
+  women_safety_index: number;
+  five_year_trend_pct: number;
+  trend_direction: "declining" | "stable" | "increasing";
+  yearly_series: CrimeYearData[];
+  categories: CrimeCategoryDetail[];
+  legal_framework: string;
+  data_provenance: string;
+  realtime_incidents?: RealtimeCrimeIncident[];
 }
 
 export interface HistoricalYearData {
@@ -252,6 +343,8 @@ export interface TravelAdvisoryInfo {
   link?: string;
   pub_date?: string;
   active_warning?: boolean;
+  status_color?: string;
+  is_domestic_safe?: boolean;
   matched_term?: string;
   sources?: {
     india_mea?: GovTravelAdvisoryItem;

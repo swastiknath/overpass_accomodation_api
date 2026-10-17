@@ -224,6 +224,7 @@ async def get_search_report(
     q: Optional[str] = Query(None, description="Location search query (e.g. 'Manali')"),
     lat: Optional[float] = Query(None, ge=-90.0, le=90.0, description="Target Latitude (WGS84)"),
     lon: Optional[float] = Query(None, ge=-180.0, le=180.0, description="Target Longitude (WGS84)"),
+    location_name: Optional[str] = Query(None, description="Human-readable location label"),
     radius_km: float = Query(5.0, ge=1.0, le=50.0, description="Search radius in kilometers"),
     alpha: float = Query(0.7, ge=0.0, le=1.0, description="Ranking weight: 1.0=Safety only, 0.0=Quality only"),
     max_hotels: int = Query(30, ge=1, le=100, description="Max hotels to return"),
@@ -245,7 +246,8 @@ async def get_search_report(
     if lat is not None and lon is not None:
         target_lat = lat
         target_lon = lon
-        location_name = q or f"Location ({round(lat, 4)}, {round(lon, 4)})"
+        location_name = location_name or q or f"Location ({round(lat, 4)}, {round(lon, 4)})"
+        district_id = location_name if location_name and not location_name.startswith("Location (") else q
     elif q:
         geocoder = get_geocoder(settings=settings)
         candidates = await geocoder.geocode(q, limit=5)

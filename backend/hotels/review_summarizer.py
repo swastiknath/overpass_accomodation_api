@@ -22,25 +22,6 @@ from llm.budget import GLOBAL_BUDGET
 
 logger = logging.getLogger("hotels.review_summarizer")
 
-# Distinct procedural templates as robust instant fallback if LLM times out
-REVIEW_TEMPLATES = [
-    "Guests praise the quiet courtyard rooms, secure 24-hour front desk, and swift check-in after late arrivals.",
-    "Consistently reviewed for pristine room cleanliness, comfortable bedding, and reliable double-locked door security.",
-    "Travelers highlight the central location with quick walking access to cultural sights, well-lit street frontage, and helpful concierge.",
-    "Commended by solo and business travelers for fast fiber WiFi, respectful security presence, and soundproof double-glazed windows.",
-    "Warm hospitality with attentive hosts; guests note the safe neighborhood, secure luggage holding, and fresh breakfast options.",
-    "Peaceful ambiance with gated property access, secure parking facilities, and immediate proximity to local transit and pharmacies.",
-    "Visitors appreciate the modern room amenities, responsive housekeeping, and peace of mind from secure keycard-only floor access.",
-    "Exceptional value with spotlessly maintained bathrooms, courteous night reception, and easy access to neighborhood dining.",
-    "Heritage architecture with updated safety fittings, calm garden surroundings, and remarkably hospitable management.",
-    "Spacious suites with reliable climate control, attentive doorman service, and convenient proximity to main arterial avenues.",
-    "Backpackers and couples commend the community atmosphere, lockable room storage, and knowledgeable local sightseeing recommendations.",
-    "High marks for perimeter security, well-stocked clean rooms, and prompt assistance in booking authorized local transit.",
-    "Guests frequently mention the restful sleep quality, blackout curtains, and polite security personnel at the entrance.",
-    "Conveniently situated near civic centers with round-the-clock desk support, swift room service, and verified guest-only entry.",
-    "Charming boutique atmosphere with authentic decor, sanitized linens, and reassuringly well-monitored corridor surveillance.",
-    "Pioneering hospitality with secure private balconies, excellent water pressure, and dependable neighborhood walkability score.",
-]
 
 
 class HotelReviewSummarizer:
@@ -59,18 +40,24 @@ class HotelReviewSummarizer:
         hotels: list[Hotel],
         location_name: str,
     ) -> list[Hotel]:
-        """Summarize real guest reviews and sentiment for hotels using Gemma."""
+        """Summarize real guest reviews and sentiment for hotels using Gemma or live crawled reviews."""
         if not hotels:
             return hotels
 
-        # First, apply deterministic diverse templates to guarantee no duplicates
-        self._apply_diverse_fallback_reviews(hotels, location_name)
+        # Derive initial review_snippet strictly from authentic crawled_reviews if available
+        for h in hotels:
+            if getattr(h, "crawled_reviews", None) and len(h.crawled_reviews) > 0:
+                first_snip = h.crawled_reviews[0].get("snippet", "").strip().strip('"')
+                if first_snip:
+                    h.review_snippet = f'"{first_snip}"'
+            else:
+                h.review_snippet = None
 
         if not self.api_key:
             return hotels
 
         if not GLOBAL_BUDGET.can_make_request():
-            logger.info("Budget limit reached; using procedural diverse review summaries.")
+            logger.info("Budget limit reached; maintaining genuine crawled review snippets.")
             return hotels
 
         try:
@@ -157,53 +144,4 @@ class HotelReviewSummarizer:
 
         return hotels
 
-    def _apply_diverse_fallback_reviews(self, hotels: list[Hotel], location_name: str) -> None:
-        """Apply uniquely seeded distinct procedural reviews ensuring zero repetition."""
-        used_reviews: set[str] = set()
-
-        luxury_reviews = [
-            "Refined luxury ambiance featuring 24/7 attentive management, private garden courtyards, and exceptional guest privacy.",
-            "High-end security with discreet concierge service, valet parking, and tranquil sound-insulated suites near prime attractions.",
-            "Distinguished property with impeccable room cleanliness, secure elevator floor locks, and panoramic district views.",
-            "Consistently celebrated for premium bedding, attentive reception personnel, and quiet residential surroundings.",
-            "Prestigious accommodations boasting secure gated entrances, fine on-site dining, and attentive 24-hour room support.",
-        ]
-
-        hostel_reviews = [
-            "Popular with solo travelers; guests praise the secure locker facilities, social lounge, and safe walking route from transit.",
-            "Clean dorms and private rooms with electronic keycard entry, welcoming multilingual desk staff, and vibrant travel vibe.",
-            "Budget-friendly community atmosphere with safe lockable storage, helpful neighborhood tips, and clean shared facilities.",
-            "Backpackers appreciate the central location, secure night access, and friendly staff ready with transit guidance.",
-        ]
-
-        resort_reviews = [
-            "Peaceful scenic grounds with dedicated security personnel, family-friendly atmosphere, and scenic unhurried surroundings.",
-            "Relaxing retreat with secure perimeter fencing, prompt room amenities, and breathtaking local neighborhood vistas.",
-            "Lush garden atmosphere featuring round-the-clock security, restorative quiet, and attentive hospitality.",
-        ]
-
-        for idx, h in enumerate(hotels):
-            h_hash = int(hashlib.md5(f"{h.id}_{h.name}_{location_name}_{idx}".encode("utf-8")).hexdigest()[:8], 16)
-            name_lower = h.name.lower()
-
-            candidate_pool: list[str]
-            if "hostel" in name_lower or h.category == "hostel":
-                candidate_pool = hostel_reviews + REVIEW_TEMPLATES
-            elif "palace" in name_lower or "grand" in name_lower or (h.stars and h.stars >= 4.5):
-                candidate_pool = luxury_reviews + REVIEW_TEMPLATES
-            elif "resort" in name_lower or "cottage" in name_lower:
-                candidate_pool = resort_reviews + REVIEW_TEMPLATES
-            else:
-                candidate_pool = REVIEW_TEMPLATES
-
-            # Pick a review from the pool that hasn't been used yet in this batch
-            chosen_review = candidate_pool[h_hash % len(candidate_pool)]
-            tries = 0
-            while chosen_review in used_reviews and tries < len(candidate_pool) * 2:
-                h_hash += 1
-                chosen_review = candidate_pool[h_hash % len(candidate_pool)]
-                tries += 1
-
-            used_reviews.add(chosen_review)
-            h.review_snippet = f'"{chosen_review.strip().strip(chr(34))}"'
 

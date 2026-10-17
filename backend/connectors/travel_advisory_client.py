@@ -311,15 +311,15 @@ MEA_ADVISORIES_REGISTRY: dict[str, dict[str, Any]] = {
         "country": "Pakistan",
         "country_code": "IN",
         "flag": "🇮🇳",
-        "level": 3,
-        "level_label": "Avoid Non-Essential Travel",
-        "status_color": "amber",
-        "summary": "Indian nationals are advised to avoid non-essential travel to Pakistan. Bilateral travel is subject to strict visa restrictions and heightened security protocols.",
-        "helpline": "+92-51-2823383 (High Commission of India, Islamabad)",
+        "level": 4,
+        "level_label": "Level 4: Strictly Advised Against All Travel — Not Safe for Indian Nationals",
+        "status_color": "rose",
+        "summary": "Travel to Pakistan is not going to be safe for Indian nationals. In view of severe bilateral tensions, heightened security risks, state-level monitoring, and restricted consular assistance, Indian citizens are strictly advised that traveling to Pakistan is not safe and strongly advised against.",
+        "helpline": "+92-51-2823383 (High Commission of India, Islamabad) / MEA 24x7 Control Room New Delhi: 1800118797",
         "embassy_contact": "High Commission of India, G-5 Diplomatic Enclave, Islamabad",
         "registration_url": "https://www.india.org.pk/",
         "official_link": "https://www.mea.gov.in/press-releases.htm",
-        "issued_date": "Active Bilateral Advisory",
+        "issued_date": "Active Severe Diplomatic Warning",
     },
     "somalia": {
         "authority": "Ministry of External Affairs (MEA), Government of India",
@@ -608,6 +608,21 @@ UK_FCDO_REGISTRY: dict[str, dict[str, Any]] = {
         "embassy_contact": "British Embassy Tripoli",
         "registration_url": "https://www.gov.uk/foreign-travel-advice/libya",
         "official_link": "https://www.gov.uk/foreign-travel-advice/libya",
+        "issued_date": "Active FCDO Advisory",
+    },
+    "pakistan": {
+        "authority": "Foreign, Commonwealth & Development Office (UK FCDO)",
+        "country": "Pakistan",
+        "country_code": "GB",
+        "flag": "🇬🇧",
+        "level": 4,
+        "level_label": "Level 4: Advise Against All Travel",
+        "status_color": "rose",
+        "summary": "FCDO advises against all travel to the border between Pakistan and India, Balochistan, and Khyber Pakhtunkhwa. Severe terrorism and security risks apply.",
+        "helpline": "+44 20 7008 5000 (UK FCDO)",
+        "embassy_contact": "British High Commission, Diplomatic Enclave, Islamabad",
+        "registration_url": "https://www.gov.uk/foreign-travel-advice/pakistan",
+        "official_link": "https://www.gov.uk/foreign-travel-advice/pakistan",
         "issued_date": "Active FCDO Advisory",
     },
 }
@@ -1063,15 +1078,16 @@ class TravelAdvisoryClient:
                     "country": "India",
                     "country_code": "IN",
                     "flag": "🇮🇳",
-                    "level": 2,
-                    "level_label": "Level 2: Exercise Normal Caution / Domestic Guidelines",
-                    "status_color": "yellow",
-                    "summary": "Standard domestic travel precautions. Travelers should consult local State Disaster Management Authority (SDMA) bulletins for seasonal weather or road closures, and dial 112 for all emergency services.",
+                    "level": 1,
+                    "level_label": "Level 1: Standard Domestic Measures (Safe)",
+                    "status_color": "emerald",
+                    "is_domestic_safe": True,
+                    "summary": "Within India: Ministry of External Affairs (MEA) and NDMA indicate standard domestic safety measures. No elevated travel advisories or regional security restrictions apply.",
                     "helpline": "National Disaster Helpline: 1070 / 112 Emergency",
                     "embassy_contact": "Local District Administration & Police Control",
                     "registration_url": "https://ndma.gov.in/",
                     "official_link": "https://www.mea.gov.in/",
-                    "issued_date": "Active Domestic Guidelines",
+                    "issued_date": "Active Domestic Measures (Normal)",
                 }
         else:
             # Generic MEA guidance for international destinations
@@ -1150,19 +1166,38 @@ class TravelAdvisoryClient:
                 "issued_date": "Active FCDO Advisory",
             }
 
-        # Compute composite maximum threat level across authorities
-        max_level = max(india_advisory.get("level", 1), us_advisory.get("level", 1), uk_advisory.get("level", 1))
-        active_warning = max_level >= 2
+        # Compute composite maximum threat level across authorities with special Pakistan & India domestic rules
+        is_pakistan = (matched_key == "pakistan" or "pakistan" in (location_name or "").lower())
+        is_domestic_safe_india = (matched_key == "india" and india_advisory.get("is_domestic_safe", False))
 
-        # Primary authority label (prioritize MEA if level >= 3, else US or highest)
-        if india_advisory.get("level", 1) >= 3:
-            primary_label = f"MEA India Alert: {india_advisory.get('level_label')}"
+        if is_pakistan:
+            max_level = 4
+            active_warning = True
+            primary_label = "Severe MEA Alert: Travel to Pakistan is Not Safe for Indian Nationals"
             primary_summary = india_advisory.get("summary")
             primary_link = india_advisory.get("official_link")
+            status_color = "rose"
+        elif is_domestic_safe_india:
+            max_level = 1
+            active_warning = True
+            primary_label = "Standard Domestic Measures — Safe for Travel"
+            primary_summary = india_advisory.get("summary")
+            primary_link = india_advisory.get("official_link")
+            status_color = "emerald"
         else:
-            primary_label = us_advisory.get("level_label") or india_advisory.get("level_label")
-            primary_summary = us_advisory.get("summary") or india_advisory.get("summary")
-            primary_link = us_advisory.get("official_link") or india_advisory.get("official_link")
+            max_level = max(india_advisory.get("level", 1), us_advisory.get("level", 1), uk_advisory.get("level", 1))
+            active_warning = max_level >= 2
+
+            if india_advisory.get("level", 1) >= 3:
+                primary_label = f"MEA India Alert: {india_advisory.get('level_label')}"
+                primary_summary = india_advisory.get("summary")
+                primary_link = india_advisory.get("official_link")
+                status_color = "rose" if max_level >= 3 else "yellow"
+            else:
+                primary_label = us_advisory.get("level_label") or india_advisory.get("level_label")
+                primary_summary = us_advisory.get("summary") or india_advisory.get("summary")
+                primary_link = us_advisory.get("official_link") or india_advisory.get("official_link")
+                status_color = "rose" if max_level >= 3 else ("yellow" if max_level == 2 else "emerald")
 
         return {
             "country": matched_key.title(),
@@ -1173,6 +1208,8 @@ class TravelAdvisoryClient:
             "pub_date": india_advisory.get("issued_date") or us_advisory.get("pub_date"),
             "matched_term": matched_key,
             "active_warning": active_warning,
+            "status_color": status_color,
+            "is_domestic_safe": is_domestic_safe_india,
             "sources": {
                 "india_mea": india_advisory,
                 "us_state_dept": us_advisory,
@@ -1204,14 +1241,15 @@ class TravelAdvisoryClient:
             Not factored into hazard scoring (returns None).
         """
         level = advisory.get("level", 1)
-        if level < 2:
+        is_domestic_safe = advisory.get("is_domestic_safe", False)
+        if level < 2 and not is_domestic_safe:
             return None
 
         # Check US State Dept specific level if available
         sources = advisory.get("sources", {})
         us_src = sources.get("us_state_dept", {})
         us_level = us_src.get("level", level) if isinstance(us_src, dict) else level
-        effective_level = max(level, us_level)
+        effective_level = max(level, us_level) if not is_domestic_safe else 1
 
         if effective_level >= 4:
             severity_raw = 0.96
@@ -1220,7 +1258,7 @@ class TravelAdvisoryClient:
             severity_raw = 0.85
             confidence = 0.95
         else:
-            # Level 2 or below: minimal influence factor
+            # Level 2 or below / domestic baseline: minimal influence factor
             severity_raw = 0.05
             confidence = 0.25
 

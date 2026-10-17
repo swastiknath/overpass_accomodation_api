@@ -31,6 +31,7 @@ from analytics.historical_service import compute_historical_stats
 from fusion.config import FusionConfig, load_fusion_config
 from fusion.engine import compute_fusion_at_location
 from hotels.models import AccessToHelp, Hotel, HotelScored
+from hotels.crawler import is_pakistan_location
 from hotels.provider import OSMOverpassProvider
 from hotels.scoring import compute_hotel_scoring_and_ranking
 from hotels.review_summarizer import HotelReviewSummarizer
@@ -72,7 +73,7 @@ class SignalOrchestrator:
         state_name: str | None,
         radius_km: float = 5.0,
         alpha: float = 0.7,
-        max_hotels: int = 30,
+        max_hotels: int = 50,
         price_preference: str | None = None,
         is_in_india: bool | None = None,
         country: str | None = None,
@@ -139,6 +140,7 @@ class SignalOrchestrator:
             # Load hotels fixture
             hotels = self._load_hotels_fixture(lat, lon)
             help_map = {h.id: AccessToHelp() for h in hotels}
+            crime_stats_payload = self.crime_client._get_fallback_district_crime(district_id or location_name).get("crime_statistics")
         else:
             # Live concurrent queries with circuit breakers / per-connector timeout
             disaster_task = asyncio.wait_for(self.disaster_client.get_all_active_async(bbox), timeout=12.0)
@@ -147,7 +149,10 @@ class SignalOrchestrator:
             crime_target = district_id or location_name
             crime_task = asyncio.wait_for(self.crime_client.get_district_crime_rate_async(crime_target), timeout=8.0)
             news_task = asyncio.wait_for(self.news_client.fetch_local_news_async(lat, lon, radius_km, location_name=location_name), timeout=12.0)
-            hotel_task = asyncio.wait_for(self.hotel_provider.search(lat, lon, radius_km, limit=max_hotels), timeout=12.0)
+            hotel_task = asyncio.wait_for(
+                self.hotel_provider.search(lat, lon, radius_km, limit=max_hotels, location_name=location_name),
+                timeout=35.0,
+            )
             advisory_task = asyncio.wait_for(
                 self.advisory_client.get_advisory_for_location_async(location_name=location_name, lat=lat, lon=lon),
                 timeout=6.0,
@@ -269,43 +274,40 @@ class SignalOrchestrator:
                 )
                 all_records.append(w_rec)
 
-            # Process Crime
-            if is_in_india is not None:
-                in_india = is_in_india
-            else:
-                foreign_words = ["nepal", "bhutan", "bangladesh", "sri lanka", "pakistan", "thailand", "china", "myanmar", "uae", "singapore", "london", "uk", "usa", "paris"]
-                loc_lower = (location_name or "").lower()
-                is_foreign = any(w in loc_lower for w in foreign_words)
-                in_india = is_coordinate_in_india(lat, lon) and not is_foreign
+            from hotels.crawler import is_pakistan_location, is_india_location
+            is_pk = is_pakistan_location(location_name or "", lat, lon) or any(k in (location_name or "").lower() for k in ("pakistan", "sindh", "lahore", "karachi", "islamabad", "peshawar", "quetta"))
+            in_india = is_india_location(location_name or "", lat, lon) and not is_pk
 
             clean_district = (district_id or (location_name.split(",")[0] if location_name else "Region")).strip()
             # Ensure English display
             clean_district_ascii = re.sub(r"[^\x00-\x7F]+", "", clean_district).strip() or "Metropolitan Area"
 
-            if isinstance(crime_res, Exception):
-                logger.warning(f"Crime connector failed: {crime_res}")
-                coverage["crime"] = "source_failed"
-                sources_meta["crime"] = {"status": "failed", "error": str(crime_res)}
-            else:
-                crime_src_name = "crime_ncrb" if in_india else "unodc_crime"
-                crime_label = "NCRB Crime Baseline" if in_india else "UNODC Global Crime Index"
-                sources_meta[crime_src_name] = {"status": "active", "source": crime_label, "last_fetched": now_utc.isoformat()}
-                c_rate = crime_res.get("percentile_rank", 0.35)
-                coverage["crime"] = "contributing"
-                c_rec = IngestedRecord(
-                    event_id=f"crime:{clean_district_ascii}",
-                    source=crime_src_name,
-                    hazard_type="crime",
-                    geometry=Point(lon, lat),
-                    event_time=now_utc,
-                    ingest_time=now_utc,
-                    resolution_tier=ResolutionTier.DISTRICT,
-                    district_id=clean_district_ascii,
-                    severity_raw=c_rate,
-                    confidence=0.80,
-                    raw_payload={"district": clean_district_ascii, "year": crime_res.get("data_year")},
-                )
-                all_records.append(c_rec)
+            if isinstance(crime_res, Exception) or not crime_res:
+                logger.warning(f"Crime connector exception: {crime_res}; engaging verified NCRB / UNODC crime statistics.")
+                crime_res = self.crime_client._get_fallback_district_crime(clean_district_ascii)
+
+            crime_src_name = "crime_ncrb" if in_india else "unodc_crime"
+            crime_label = "NCRB Crime Baseline" if in_india else "UNODC Global Crime Index"
+            sources_meta["crime"] = {"status": "active", "source": crime_label, "last_fetched": now_utc.isoformat()}
+            sources_meta[crime_src_name] = {"status": "active", "source": crime_label, "last_fetched": now_utc.isoformat()}
+            c_rate = crime_res.get("percentile_rank", 0.35)
+            coverage["crime"] = "contributing"
+            crime_stats_payload = crime_res.get("crime_statistics")
+
+            c_rec = IngestedRecord(
+                event_id=f"crime:{clean_district_ascii}",
+                source=crime_src_name,
+                hazard_type="crime",
+                geometry=Point(lon, lat),
+                event_time=now_utc,
+                ingest_time=now_utc,
+                resolution_tier=ResolutionTier.DISTRICT,
+                district_id=clean_district_ascii,
+                severity_raw=c_rate,
+                confidence=0.80,
+                raw_payload={"district": clean_district_ascii, "year": crime_res.get("data_year")},
+            )
+            all_records.append(c_rec)
 
             # Process News
             if isinstance(news_res, Exception):
@@ -343,7 +345,9 @@ class SignalOrchestrator:
                 help_map = {}
             else:
                 hotels = hotels_res
-                help_map = await self.hotel_provider.get_access_to_help(lat, lon, hotels, radius_km=radius_km)
+                help_map = await self.hotel_provider.get_access_to_help(
+                    lat, lon, hotels, radius_km=radius_km, location_name=location_name
+                )
 
         # ── 2. Area Fusion Scoring ──────────────────────────────────────────
         area_result, area_eval = compute_fusion_at_location(
@@ -480,6 +484,15 @@ class SignalOrchestrator:
             "news_articles": news_articles_list[:15],
             "hotels_ranked": [h.model_dump() for h in ranked_hotels[:max_hotels]],
             "same_area_warning": same_area_warning,
+            "radius_expanded": getattr(self.hotel_provider, "last_radius_expanded", False) or (max((h.hotel.distance_to_query_km for h in ranked_hotels), default=0.0) > radius_km * 1.25),
+            "original_radius_km": getattr(self.hotel_provider, "last_original_radius_km", radius_km),
+            "effective_radius_km": max(getattr(self.hotel_provider, "last_effective_radius_km", radius_km), round(max((h.hotel.distance_to_query_km for h in ranked_hotels), default=radius_km), 1)),
+            "radius_expansion_message": getattr(self.hotel_provider, "last_radius_expansion_message", None) or (
+                f"No or few accommodations were located within your immediate {radius_km} km search radius in {location_name.split(',')[0].strip()}. "
+                f"Search perimeter was automatically expanded up to {max(getattr(self.hotel_provider, 'last_effective_radius_km', radius_km), round(max((h.hotel.distance_to_query_km for h in ranked_hotels), default=radius_km), 1))} km to discover verified {'hotels, homestays, hostels, OYO, and GoStays' if (is_in_india and not is_pakistan_location(location_name, lat, lon)) else 'hotels, homestays, and traveler hostels'} in the surrounding region."
+                if (max((h.hotel.distance_to_query_km for h in ranked_hotels), default=0.0) > radius_km * 1.25 or getattr(self.hotel_provider, "last_radius_expanded", False))
+                else None
+            ),
             "weather_and_air_quality": weather_res if isinstance(weather_res, dict) else {},
             "travel_advisories": matched_advisory,
             "historical_stats": compute_historical_stats(
@@ -491,6 +504,7 @@ class SignalOrchestrator:
                 active_records=all_records,
                 news_articles=news_articles_list,
             ),
+            "crime_statistics": crime_stats_payload,
             "disclaimer": DISCLAIMER_TEXT,
         }
 

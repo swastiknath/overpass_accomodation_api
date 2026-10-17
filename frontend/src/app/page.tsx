@@ -18,7 +18,9 @@ import ExportButtons from "@/components/ExportButtons";
 import WeatherAirQualityPanel from "@/components/WeatherAirQualityPanel";
 import TravelAdvisoriesBanner from "@/components/TravelAdvisoriesBanner";
 import HistoricalDataViewer from "@/components/HistoricalDataViewer";
+import CrimeStatisticsVisualizer from "@/components/CrimeStatisticsVisualizer";
 import RiskTelemetryVisualizer from "@/components/RiskTelemetryVisualizer";
+import SearchLoadingAnimation from "@/components/SearchLoadingAnimation";
 import Footer from "@/components/Footer";
 import dynamic from "next/dynamic";
 
@@ -44,6 +46,18 @@ function DashboardContent() {
   const [currentQuery, setCurrentQuery] = useState(urlQuery);
   const [alpha, setAlpha] = useState(urlAlpha);
   const [selectedHotelId, setSelectedHotelId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (urlQuery && urlQuery !== currentQuery) {
+      setCurrentQuery(urlQuery);
+    }
+  }, [urlQuery]);
+
+  useEffect(() => {
+    if (!isNaN(urlAlpha) && urlAlpha !== alpha) {
+      setAlpha(urlAlpha);
+    }
+  }, [urlAlpha]);
 
   // Sync state to URL without full page reload
   const updateUrlState = (newQuery: string, newAlpha: number) => {
@@ -97,7 +111,7 @@ function DashboardContent() {
     handleSearch(candidate.display_name.split(",")[0]);
   };
 
-  const isDemo = report?.demo ?? true;
+  const isDemo = report ? Boolean(report.demo) : false;
 
   return (
     <div className="flex flex-col min-h-screen bg-black text-zinc-100 font-sans">
@@ -133,11 +147,8 @@ function DashboardContent() {
 
         {/* Report Loading State */}
         {reportLoading && (
-          <div className="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
-            <p className="text-sm font-medium text-zinc-300">
-              Evaluating live hazard feeds and calculating deterministic fusion score...
-            </p>
+          <div className="py-6">
+            <SearchLoadingAnimation query={currentQuery} />
           </div>
         )}
 
@@ -168,9 +179,8 @@ function DashboardContent() {
             {/* Score Panel */}
             <ScorePanel report={report} />
 
-            {/* Two Column Layout: Map & AI Narrative */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Map Column (7 Cols on desktop) */}
+            {/* Row 1: Geospatial Intelligence & AI Executive Synthesis (Balanced Left & Right Columns) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div className="lg:col-span-7 space-y-6">
                 <MapLibreView
                   report={report}
@@ -178,19 +188,28 @@ function DashboardContent() {
                   onSelectHotel={setSelectedHotelId}
                 />
                 <ExplanationPanel report={report} />
-                <HistoricalDataViewer report={report} />
               </div>
-
-              {/* Sidebar Column: AI Narrative (5 Cols) */}
               <div className="lg:col-span-5 space-y-6">
                 <NarrativeCard
                   explanation={explanation}
                   isLoading={explanationLoading}
                   error={explanationError?.message}
                 />
-                <RiskTelemetryVisualizer report={report} />
               </div>
             </div>
+
+            {/* Row 2: Multi-Hazard Live Telemetry & Historical Longitudinal Retrospectives */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-6">
+                <RiskTelemetryVisualizer report={report} />
+              </div>
+              <div className="lg:col-span-6">
+                <HistoricalDataViewer report={report} />
+              </div>
+            </div>
+
+            {/* Row 3: 5-Year Crime Statistics & Real-Time Crime Telemetry (Full Width Panoramic Audit) */}
+            <CrimeStatisticsVisualizer report={report} />
 
             {/* Official Safety Guidance & Local District Administration (Shifted Down Full Width) */}
             <CuratedAdvicePanel
@@ -222,6 +241,10 @@ function DashboardContent() {
               onAlphaChange={handleAlphaChange}
               selectedHotelId={selectedHotelId}
               onSelectHotel={setSelectedHotelId}
+              radiusExpanded={report.radius_expanded}
+              originalRadiusKm={report.original_radius_km}
+              effectiveRadiusKm={report.effective_radius_km}
+              radiusExpansionMessage={report.radius_expansion_message}
             />
           </div>
         )}
