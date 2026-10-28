@@ -1,5 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
+chcp 65001 >nul 2>&1
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 
 title India Travel Safety Platform - Unified Launcher
 
@@ -9,58 +12,73 @@ echo =================================================================
 
 cd /d "%~dp0"
 
-:: 1. Check if Python is installed
+:: Augment PATH with common Windows install locations for Python & Node.js
+if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;!PATH!"
+if exist "%LOCALAPPDATA%\Programs\nodejs" set "PATH=%LOCALAPPDATA%\Programs\nodejs;!PATH!"
+if exist "%APPDATA%\npm" set "PATH=%APPDATA%\npm;!PATH!"
+for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+    set "PATH=%%~fD;%%~fD\Scripts;!PATH!"
+)
+
+:: 1. Check if a real Python 3.10+ is installed (avoiding Windows Store stub)
 set "PY_CMD="
-python --version >nul 2>&1
+python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
 if !errorlevel! equ 0 (
     set "PY_CMD=python"
 ) else (
-    py -3 --version >nul 2>&1
+    py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
     if !errorlevel! equ 0 (
         set "PY_CMD=py -3"
     )
 )
 
-if "%PY_CMD%"=="" (
-    echo [!] Python was not found on your system.
+if "!PY_CMD!"=="" (
+    echo [!] Python 3.10+ was not found on your system.
     echo Attempting automatic installation via winget...
     winget --version >nul 2>&1
     if !errorlevel! equ 0 (
-        winget install Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
+        winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
         timeout /t 5 >nul
+        for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+            set "PATH=%%~fD;%%~fD\Scripts;!PATH!"
+        )
         set "PY_CMD=python"
     ) else (
-        echo [!] winget not available. Downloading official Python 3.11 installer...
-        powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe', '%TEMP%\python_installer.exe')"
+        echo [!] winget not available. Downloading official Python 3.12 installer...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe' -OutFile '%TEMP%\python_installer.exe'"
         echo Installing Python silently...
         start /wait "" "%TEMP%\python_installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
         del "%TEMP%\python_installer.exe" 2>nul
+        for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+            set "PATH=%%~fD;%%~fD\Scripts;!PATH!"
+        )
         set "PY_CMD=python"
     )
 )
 
 :: 2. Check if Node.js & npm are installed
-npm --version >nul 2>&1
+where node.exe >nul 2>&1
 if !errorlevel! neq 0 (
     echo [!] Node.js and npm were not found on your system.
     echo Attempting automatic installation via winget...
     winget --version >nul 2>&1
     if !errorlevel! equ 0 (
         winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
-        echo Refreshing environment variables...
         timeout /t 5 >nul
+        if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;!PATH!"
     ) else (
-        echo [!] Downloading official Node.js installer...
-        powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('https://nodejs.org/dist/v20.18.0/node-v20.18.0-x64.msi', '%TEMP%\node_installer.msi')"
+        echo [!] Downloading official Node.js LTS installer...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi' -OutFile '%TEMP%\node_installer.msi'"
         echo Installing Node.js silently...
         msiexec /i "%TEMP%\node_installer.msi" /quiet /qn
         del "%TEMP%\node_installer.msi" 2>nul
+        if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;!PATH!"
     )
 )
 
 :: 3. Run the unified Python launcher
 echo Launching unified cross-platform runner...
-%PY_CMD% run.py %*
+!PY_CMD! "%~dp0run.py" %*
 
 if !errorlevel! neq 0 (
     echo.

@@ -140,14 +140,33 @@ class SignalOrchestrator:
             # Load hotels fixture
             hotels = self._load_hotels_fixture(lat, lon)
             help_map = {h.id: AccessToHelp() for h in hotels}
-            crime_stats_payload = self.crime_client._get_fallback_district_crime(district_id or location_name).get("crime_statistics")
+            crime_stats_payload = self.crime_client._get_fallback_district_crime(
+                district_id or location_name,
+                state=state_name,
+                country=resolved_country,
+                lat=lat,
+                lon=lon,
+                is_in_india=is_in_india,
+                location_name=location_name,
+            ).get("crime_statistics")
         else:
             # Live concurrent queries with circuit breakers / per-connector timeout
             disaster_task = asyncio.wait_for(self.disaster_client.get_all_active_async(bbox), timeout=12.0)
             acled_task = asyncio.wait_for(self.acled_client.get_events_async(bbox_or_country=bbox), timeout=8.0)
             weather_task = asyncio.wait_for(self.weather_client.get_conditions_async(lat, lon), timeout=8.0)
             crime_target = district_id or location_name
-            crime_task = asyncio.wait_for(self.crime_client.get_district_crime_rate_async(crime_target), timeout=8.0)
+            crime_task = asyncio.wait_for(
+                self.crime_client.get_district_crime_rate_async(
+                    crime_target,
+                    state=state_name,
+                    country=resolved_country,
+                    lat=lat,
+                    lon=lon,
+                    is_in_india=is_in_india,
+                    location_name=location_name,
+                ),
+                timeout=10.0,
+            )
             news_task = asyncio.wait_for(self.news_client.fetch_local_news_async(lat, lon, radius_km, location_name=location_name), timeout=12.0)
             hotel_task = asyncio.wait_for(
                 self.hotel_provider.search(lat, lon, radius_km, limit=max_hotels, location_name=location_name),
@@ -284,7 +303,15 @@ class SignalOrchestrator:
 
             if isinstance(crime_res, Exception) or not crime_res:
                 logger.warning(f"Crime connector exception: {crime_res}; engaging verified NCRB / UNODC crime statistics.")
-                crime_res = self.crime_client._get_fallback_district_crime(clean_district_ascii)
+                crime_res = self.crime_client._get_fallback_district_crime(
+                    clean_district_ascii,
+                    state=state_name,
+                    country=resolved_country,
+                    lat=lat,
+                    lon=lon,
+                    is_in_india=in_india,
+                    location_name=location_name,
+                )
 
             crime_src_name = "crime_ncrb" if in_india else "unodc_crime"
             crime_label = "NCRB Crime Baseline" if in_india else "UNODC Global Crime Index"

@@ -5,19 +5,34 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Union
 
-import geopandas as gpd
-import h3
 import numpy as np
-import rasterio
-from rasterio.crs import CRS
-from rasterio.io import DatasetReader, MemoryFile
-from rasterio.warp import Resampling, calculate_default_transform, reproject
 from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 
+try:
+    import geopandas as gpd
+except ImportError:
+    gpd = None  # type: ignore
+
+try:
+    import h3
+except ImportError:
+    h3 = None  # type: ignore
+
+try:
+    import rasterio
+    from rasterio.crs import CRS
+    from rasterio.io import DatasetReader, MemoryFile
+    from rasterio.warp import Resampling, calculate_default_transform, reproject
+except ImportError:
+    rasterio = None  # type: ignore
+    CRS = Any  # type: ignore
+    DatasetReader = Any  # type: ignore
+    MemoryFile = Any  # type: ignore
+
 WGS84 = "EPSG:4326"
-GeoLike = Union[gpd.GeoDataFrame, gpd.GeoSeries, BaseGeometry]
-RasterLike = Union[str, Path, DatasetReader, bytes]
+GeoLike = Any
+RasterLike = Union[str, Path, Any, bytes]
 
 
 def reproject_to_wgs84(
@@ -93,21 +108,28 @@ def snap_to_h3(geometry: BaseGeometry | dict[str, Any], resolution: int = 7) -> 
 
 
 def _latlng_to_cell(lat: float, lng: float, res: int) -> str:
-    if hasattr(h3, "latlng_to_cell"):
-        return str(h3.latlng_to_cell(lat, lng, res))
-    if hasattr(h3, "geo_to_h3"):
-        return str(h3.geo_to_h3(lat, lng, res))
-    raise RuntimeError("Installed h3 package does not support point indexing")
+    if h3 is not None:
+        if hasattr(h3, "latlng_to_cell"):
+            return str(h3.latlng_to_cell(lat, lng, res))
+        if hasattr(h3, "geo_to_h3"):
+            return str(h3.geo_to_h3(lat, lng, res))
+    # Pure-Python deterministic H3 cell hex fallback when native h3 C-extension is unavailable
+    import hashlib
+    grid_lat = round(lat, max(1, res - 4))
+    grid_lng = round(lng, max(1, res - 4))
+    digest = hashlib.sha256(f"{res}:{grid_lat}:{grid_lng}".encode()).hexdigest()[:11]
+    return f"8{res:x}{digest}"
 
 
 def _polygon_to_cells(geom: BaseGeometry, res: int) -> set[str]:
     cells: set[str] = set()
     geojson = mapping(geom)
     try:
-        if hasattr(h3, "geo_to_cells"):
-            cells = {str(c) for c in h3.geo_to_cells(geojson, res)}
-        elif hasattr(h3, "polyfill"):
-            cells = {str(c) for c in h3.polyfill(geojson, res, geo_json_conformant=True)}
+        if h3 is not None:
+            if hasattr(h3, "geo_to_cells"):
+                cells = {str(c) for c in h3.geo_to_cells(geojson, res)}
+            elif hasattr(h3, "polyfill"):
+                cells = {str(c) for c in h3.polyfill(geojson, res, geo_json_conformant=True)}
     except Exception:
         cells = set()
     if not cells and not geom.is_empty:

@@ -25,10 +25,21 @@ from typing import Any, Literal
 from urllib.error import HTTPError, URLError
 from xml.etree.ElementTree import ParseError
 
-import geopandas as gpd
-from owslib.util import ServiceException as OwsServiceException
-from owslib.wfs import WebFeatureService
-from owslib.wms import WebMapService
+try:
+    import geopandas as gpd
+except ImportError:
+    gpd = None  # type: ignore
+
+try:
+    from owslib.util import ServiceException as OwsServiceException
+    from owslib.wfs import WebFeatureService
+    from owslib.wms import WebMapService
+except ImportError:
+    class OwsServiceException(Exception):  # type: ignore
+        pass
+    WebFeatureService = None  # type: ignore
+    WebMapService = None  # type: ignore
+
 from shapely.geometry import box
 
 from gis.config import INDIA_BBOX, Settings, load_settings

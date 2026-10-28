@@ -5,6 +5,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   TrendingDown,
+  TrendingUp,
   BarChart3,
   Gavel,
   Users,
@@ -347,12 +348,22 @@ export default function CrimeStatisticsVisualizer({ report }: CrimeStatisticsVis
         <div className="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition flex flex-col justify-between overflow-hidden">
           <div className="flex items-center justify-between text-zinc-400 mb-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider">5-Year Crime Delta</span>
-            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <TrendingDown className="h-3.5 w-3.5" />
+            <div className={`p-1.5 rounded-lg border ${
+              crime.five_year_trend_pct <= 0
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+            }`}>
+              {crime.five_year_trend_pct <= 0 ? (
+                <TrendingDown className="h-3.5 w-3.5" />
+              ) : (
+                <TrendingUp className="h-3.5 w-3.5" />
+              )}
             </div>
           </div>
           <div className="flex items-baseline gap-1.5 min-w-0">
-            <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-emerald-400 leading-none">
+            <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight leading-none ${
+              crime.five_year_trend_pct <= 0 ? "text-emerald-400" : "text-amber-400"
+            }`}>
               {crime.five_year_trend_pct > 0 ? `+${crime.five_year_trend_pct}%` : `${crime.five_year_trend_pct}%`}
             </span>
             <span className="text-xs text-zinc-400 font-medium capitalize leading-none">({crime.trend_direction})</span>
