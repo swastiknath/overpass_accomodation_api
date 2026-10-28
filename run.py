@@ -371,6 +371,7 @@ def setup_frontend_dependencies(npm_cmd: str) -> None:
             res = subprocess.run(
                 [npm_cmd, "install", "--force", "--include=optional", "--no-audit", "--no-fund"],
                 cwd=str(FRONTEND_DIR),
+                shell=IS_WINDOWS,
                 check=False,
             )
             if res.returncode != 0:
@@ -379,6 +380,7 @@ def setup_frontend_dependencies(npm_cmd: str) -> None:
                 subprocess.run(
                     [npm_cmd, "install", "--no-audit", "--no-fund", "--legacy-peer-deps"],
                     cwd=str(FRONTEND_DIR),
+                    shell=IS_WINDOWS,
                     check=True,
                 )
         else:
@@ -386,6 +388,7 @@ def setup_frontend_dependencies(npm_cmd: str) -> None:
             subprocess.run(
                 [npm_cmd, "install", "--no-audit", "--no-fund"],
                 cwd=str(FRONTEND_DIR),
+                shell=IS_WINDOWS,
                 check=True,
             )
         print("[OK] Frontend dependencies installed.")
@@ -502,12 +505,12 @@ def main() -> None:
     )
 
     # Step 6: Handle graceful shutdown
-    def shutdown(signum=None, frame=None):
+    def shutdown(signum=None, frame=None, exit_code: int = 0):
         print("\nStopping all servers cleanly...")
         _kill_process_tree(frontend_proc)
         _kill_process_tree(backend_proc)
         print("Servers stopped. Goodbye!")
-        sys.exit(0)
+        sys.exit(exit_code)
 
     signal.signal(signal.SIGINT, shutdown)
     if hasattr(signal, "SIGTERM"):
@@ -518,13 +521,13 @@ def main() -> None:
         while True:
             if backend_proc.poll() is not None:
                 print("Backend process terminated unexpectedly.")
-                shutdown()
+                shutdown(exit_code=1)
             if frontend_proc.poll() is not None:
                 print("Frontend process terminated unexpectedly.")
-                shutdown()
+                shutdown(exit_code=1)
             time.sleep(1)
     except KeyboardInterrupt:
-        shutdown()
+        shutdown(exit_code=0)
 
 
 if __name__ == "__main__":
