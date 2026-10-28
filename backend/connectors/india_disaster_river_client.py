@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import html
+import json
 import logging
 import math
 import re
@@ -44,25 +45,29 @@ logger = logging.getLogger(__name__)
 
 # In-memory cache for river discharge and Indian authority feeds (key -> (timestamp, payload))
 _RIVER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CWC_LIVE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CWC_WARNING_QUEUE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_SACHET_CAP_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _INDIA_ALERTS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _CACHE_TTL = 900.0  # 15 minutes
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CWC (Central Water Commission) River Gauge Station & Flood Control Registry
+# CWC (Central Water Commission) FloodWatch India Station & Authority Registry
 # ─────────────────────────────────────────────────────────────────────────────
-# Grounded in official CWC Flood Forecasting stations (ffs.india-water.gov.in),
-# Warning Levels (WL in m MSL), Danger Levels (DL in m MSL), Highest Flood Levels (HFL),
-# upstream barrages/dams, BIS IS-1893 seismic zones, and State/Local Indian authorities.
+# Grounded in official CWC FloodWatch India / Flood Forecasting stations (ffs.india-water.gov.in),
+# exact CWC station codes (`cwc_station_code`), Warning Levels (WL in m MSL), Danger Levels (DL in m MSL),
+# Highest Flood Levels (HFL), upstream barrages/dams, BIS IS-1893 seismic zones, and State/Local Indian authorities.
 INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "delhi": {
         "city": "New Delhi",
         "state": "Delhi",
         "river_name": "Yamuna River",
         "basin": "Ganga–Yamuna Basin",
-        "cwc_station": "Old Railway Bridge (Loha Pul), Delhi",
+        "cwc_station": "Delhi Railway Bridge (Old Loha Pul) CWC Station",
+        "cwc_station_code": "015-UYDDEL",
         "upstream_control": "Hathnikund Barrage & Wazirabad Barrage",
-        "normal_level_m": 202.80,
+        "normal_level_m": 201.46,
         "warning_level_m": 204.50,
         "danger_level_m": 205.33,
         "hfl_m": 208.66,
@@ -70,7 +75,7 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "baseline_discharge_m3s": 280.0,
         "danger_discharge_m3s": 2850.0,
         "seismic_zone": "Zone IV (High Seismic Intensity)",
-        "flood_authority": "Central Water Commission (CWC) Upper Yamuna Division & Delhi Irrigation & Flood Control Dept (I&FC)",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Upper Yamuna Division) & Delhi I&FC Dept",
         "seismic_authority": "National Centre for Seismology (NCS, Lodhi Road HQ) & DDMA Delhi",
         "fire_authority": "Delhi Fire Service (DFS) & Forest Survey of India (FSI Northern Zone)",
         "sdma_name": "Delhi Disaster Management Authority (DDMA)",
@@ -83,17 +88,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Himachal Pradesh",
         "river_name": "Beas River",
         "basin": "Indus–Beas Himalayan Catchment",
-        "cwc_station": "Bhuntar / Manali Gauge (Beas Basin)",
+        "cwc_station": "Pandoa / Bhuntar CWC Hydrological Station (Beas–Sutlej Basin)",
+        "cwc_station_code": "005-SHDSIM",
         "upstream_control": "Solang–Palchan Glacial Inflow & Pandoh Dam (BBMB)",
-        "normal_level_m": 1044.20,
-        "warning_level_m": 1046.50,
-        "danger_level_m": 1048.00,
-        "hfl_m": 1051.20,
+        "normal_level_m": 677.14,
+        "warning_level_m": 685.00,
+        "danger_level_m": 687.50,
+        "hfl_m": 689.60,
         "hfl_year": 2023,
         "baseline_discharge_m3s": 165.0,
         "danger_discharge_m3s": 1800.0,
         "seismic_zone": "Zone V (Very Severe Himalayan Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC) Shimla, BBMB & Himachal Pradesh Jal Shakti Vibhag",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Shimla), BBMB & HP Jal Shakti Vibhag",
         "seismic_authority": "National Centre for Seismology (NCS Shimla/Sundernagar Observatory) & DDMA Kullu",
         "fire_authority": "Forest Survey of India (FSI Vanagni) & Himachal Pradesh Forest Department (Kullu Circle)",
         "sdma_name": "Himachal Pradesh SDMA (HPSDMA) & DDMA Kullu",
@@ -106,17 +112,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Himachal Pradesh",
         "river_name": "Beas & Parvati River Confluence",
         "basin": "Indus–Beas Himalayan Catchment",
-        "cwc_station": "Bhuntar CWC Hydrological Station, Kullu",
+        "cwc_station": "Pandoa / Bhuntar CWC Hydrological Station, Kullu",
+        "cwc_station_code": "005-SHDSIM",
         "upstream_control": "Parbati Hydroelectric Barrage & Pandoh Dam (BBMB)",
-        "normal_level_m": 1044.20,
-        "warning_level_m": 1046.50,
-        "danger_level_m": 1048.00,
-        "hfl_m": 1051.20,
+        "normal_level_m": 677.14,
+        "warning_level_m": 685.00,
+        "danger_level_m": 687.50,
+        "hfl_m": 689.60,
         "hfl_year": 2023,
         "baseline_discharge_m3s": 180.0,
         "danger_discharge_m3s": 1900.0,
         "seismic_zone": "Zone V (Very Severe Himalayan Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC) & DDMA Kullu / HP Jal Shakti Vibhag",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India) & DDMA Kullu / HP Jal Shakti Vibhag",
         "seismic_authority": "National Centre for Seismology (NCS) & Himachal Pradesh SDMA (HPSDMA)",
         "fire_authority": "Forest Survey of India (FSI Vanagni) & HP Forest Department (Great Himalayan National Park Circle)",
         "sdma_name": "DDMA Kullu & Himachal Pradesh SDMA",
@@ -129,17 +136,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Himachal Pradesh",
         "river_name": "Sutlej River",
         "basin": "Indus–Sutlej Himalayan Basin",
-        "cwc_station": "Sunni / Rampur CWC Gauge (Sutlej Basin)",
+        "cwc_station": "Rampur CWC FloodWatch Station (Sutlej Basin)",
+        "cwc_station_code": "004-SHDSIM",
         "upstream_control": "Nathpa Jhakri Dam (SJVNL) & Kol Dam",
-        "normal_level_m": 652.40,
-        "warning_level_m": 655.00,
-        "danger_level_m": 656.80,
-        "hfl_m": 660.10,
+        "normal_level_m": 914.40,
+        "warning_level_m": 920.50,
+        "danger_level_m": 922.50,
+        "hfl_m": 924.50,
         "hfl_year": 2023,
         "baseline_discharge_m3s": 240.0,
         "danger_discharge_m3s": 2400.0,
         "seismic_zone": "Zone IV–V (High Himalayan Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC) Himalayan Ganga/Indus Basin & HPSDMA Shimla",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Shimla Division) & HPSDMA Shimla",
         "seismic_authority": "National Centre for Seismology (NCS Shimla Observatory) & HPSDMA",
         "fire_authority": "Forest Survey of India (FSI Shimla Regional Office) & HP Forest Department",
         "sdma_name": "Himachal Pradesh State Disaster Management Authority (HPSDMA)",
@@ -152,17 +160,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Uttarakhand",
         "river_name": "Ganga River",
         "basin": "Upper Ganga Basin (Alaknanda–Bhagirathi)",
-        "cwc_station": "Rishikesh CWC Flood Forecasting Station",
+        "cwc_station": "Rishikesh CWC FloodWatch Forecasting Station",
+        "cwc_station_code": "014-HGDDDN",
         "upstream_control": "Tehri Dam (THDC) & Pashulok Barrage",
-        "normal_level_m": 337.80,
+        "normal_level_m": 337.14,
         "warning_level_m": 339.50,
         "danger_level_m": 340.50,
-        "hfl_m": 342.80,
+        "hfl_m": 341.72,
         "hfl_year": 2013,
         "baseline_discharge_m3s": 390.0,
         "danger_discharge_m3s": 3600.0,
         "seismic_zone": "Zone IV–V (Garhwal Himalayan Seismic Belt)",
-        "flood_authority": "Central Water Commission (CWC) Upper Ganga Division (Dehradun) & Uttarakhand Irrigation Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Himalayan Ganga Division, Dehradun) & UK Irrigation Dept",
         "seismic_authority": "National Centre for Seismology (NCS) & Wadia Institute of Himalayan Geology / USDMA",
         "fire_authority": "Forest Survey of India (FSI Dehradun HQ - Vanagni) & Uttarakhand Forest Department",
         "sdma_name": "Uttarakhand State Disaster Management Authority (USDMA)",
@@ -175,9 +184,10 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Uttarakhand",
         "river_name": "Ganga, Song & Tons Rivers",
         "basin": "Upper Ganga Basin",
-        "cwc_station": "Haridwar Bhimgoda Barrage / Raiwala CWC Gauge",
+        "cwc_station": "Haridwar CWC FloodWatch Station (Bhimgoda Barrage)",
+        "cwc_station_code": "015-HGDDDN",
         "upstream_control": "Tehri Dam & Bhimgoda Barrage",
-        "normal_level_m": 291.40,
+        "normal_level_m": 289.62,
         "warning_level_m": 293.00,
         "danger_level_m": 294.00,
         "hfl_m": 296.30,
@@ -185,7 +195,7 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "baseline_discharge_m3s": 420.0,
         "danger_discharge_m3s": 3900.0,
         "seismic_zone": "Zone IV–V (Garhwal Himalayan Seismic Belt)",
-        "flood_authority": "Central Water Commission (CWC Dehradun) & Uttarakhand Irrigation Department",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Dehradun) & Uttarakhand Irrigation Department",
         "seismic_authority": "National Centre for Seismology (NCS) & USDMA State Emergency Operations Centre (SEOC)",
         "fire_authority": "Forest Survey of India (FSI Headquarters Dehradun - Vanagni) & Uttarakhand Forest Fire Cell",
         "sdma_name": "Uttarakhand State Disaster Management Authority (USDMA)",
@@ -198,9 +208,10 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Uttar Pradesh",
         "river_name": "Ganga River",
         "basin": "Middle Ganga Basin",
-        "cwc_station": "Rajghat CWC Hydrological Station, Varanasi",
+        "cwc_station": "Varanasi (Rajghat) CWC FloodWatch Station",
+        "cwc_station_code": "006-MGD3VNS",
         "upstream_control": "Narora Barrage & Kanpur Ganga Barrage (Lavkush)",
-        "normal_level_m": 63.50,
+        "normal_level_m": 61.96,
         "warning_level_m": 70.26,
         "danger_level_m": 71.26,
         "hfl_m": 73.90,
@@ -208,7 +219,7 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "baseline_discharge_m3s": 1150.0,
         "danger_discharge_m3s": 12500.0,
         "seismic_zone": "Zone III (Moderate Indo-Gangetic Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Middle Ganga Division, Varanasi) & UP Irrigation & Water Resources Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Middle Ganga Division III, Varanasi) & UP Irrigation Dept",
         "seismic_authority": "National Centre for Seismology (NCS BHU Varanasi Observatory) & UPSDMA",
         "fire_authority": "UP Fire & Emergency Services & Forest Survey of India (FSI Central Zone)",
         "sdma_name": "Uttar Pradesh SDMA (UPSDMA) & DDMA Varanasi",
@@ -221,17 +232,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Uttar Pradesh",
         "river_name": "Gomti River",
         "basin": "Ganga–Gomti Basin",
-        "cwc_station": "Gaughat / Gomti Barrage CWC Gauge, Lucknow",
+        "cwc_station": "Lucknow CWC FloodWatch Station (Gomti River)",
+        "cwc_station_code": "014-mgd2lkn",
         "upstream_control": "Gomti Barrage, Lucknow",
-        "normal_level_m": 105.40,
-        "warning_level_m": 108.60,
-        "danger_level_m": 109.70,
-        "hfl_m": 111.35,
+        "normal_level_m": 105.62,
+        "warning_level_m": 108.50,
+        "danger_level_m": 109.50,
+        "hfl_m": 110.85,
         "hfl_year": 1960,
         "baseline_discharge_m3s": 140.0,
         "danger_discharge_m3s": 1650.0,
         "seismic_zone": "Zone III (Moderate Indo-Gangetic Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Lucknow) & UP Irrigation & Flood Control Department",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Middle Ganga Division II, Lucknow) & UP Irrigation Dept",
         "seismic_authority": "National Centre for Seismology (NCS) & Uttar Pradesh SDMA (UPSDMA)",
         "fire_authority": "UP Forest Department & UP Fire and Emergency Services",
         "sdma_name": "Uttar Pradesh State Disaster Management Authority (UPSDMA)",
@@ -244,9 +256,10 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Uttar Pradesh",
         "river_name": "Yamuna River",
         "basin": "Lower Yamuna Basin",
-        "cwc_station": "Poiya Ghat / Waterworks Gauge, Agra",
+        "cwc_station": "Agra (J.B.) CWC FloodWatch Station",
+        "cwc_station_code": "001-LYDAGRA",
         "upstream_control": "Gokul Barrage (Mathura) & Okhla Barrage",
-        "normal_level_m": 148.80,
+        "normal_level_m": 147.38,
         "warning_level_m": 151.40,
         "danger_level_m": 152.40,
         "hfl_m": 154.76,
@@ -254,7 +267,7 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "baseline_discharge_m3s": 260.0,
         "danger_discharge_m3s": 2700.0,
         "seismic_zone": "Zone III (Moderate Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Lower Yamuna Division, Agra) & UP Irrigation Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Lower Yamuna Division, Agra) & UP Irrigation Dept",
         "seismic_authority": "National Centre for Seismology (NCS) & DDMA Agra",
         "fire_authority": "UP Fire Services & Forest Survey of India (FSI)",
         "sdma_name": "DDMA Agra & Uttar Pradesh SDMA",
@@ -267,9 +280,10 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Bihar",
         "river_name": "Ganga, Son & Punpun Rivers",
         "basin": "Lower Ganga Basin",
-        "cwc_station": "Gandhighat & Dighaghat CWC Stations, Patna",
+        "cwc_station": "Gandhighat Patna CWC FloodWatch Station",
+        "cwc_station_code": "003-MGD5PTN",
         "upstream_control": "Indrapuri Sone Barrage & Bansagar Dam",
-        "normal_level_m": 44.80,
+        "normal_level_m": 45.52,
         "warning_level_m": 47.60,
         "danger_level_m": 48.60,
         "hfl_m": 50.52,
@@ -277,7 +291,7 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "baseline_discharge_m3s": 2400.0,
         "danger_discharge_m3s": 18500.0,
         "seismic_zone": "Zone IV (High Seismic Intensity)",
-        "flood_authority": "Central Water Commission (CWC Lower Ganga Basin, Patna) & Bihar Water Resources Dept (FMISC)",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Middle Ganga Division V, Patna) & Bihar WRD (FMISC)",
         "seismic_authority": "National Centre for Seismology (NCS Patna) & Bihar SDMA (BSDMA)",
         "fire_authority": "Bihar Fire Services & Forest Survey of India (FSI)",
         "sdma_name": "Bihar State Disaster Management Authority (BSDMA)",
@@ -290,9 +304,10 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Assam",
         "river_name": "Brahmaputra River",
         "basin": "Brahmaputra Basin",
-        "cwc_station": "Pandu / Kachari Ghat CWC Station, Guwahati",
+        "cwc_station": "Guwahati (D.C. Court) CWC FloodWatch Station",
+        "cwc_station_code": "001-MBDGHY",
         "upstream_control": "Subansiri & Ranganadi Hydroelectric Reservoirs",
-        "normal_level_m": 46.20,
+        "normal_level_m": 43.31,
         "warning_level_m": 48.68,
         "danger_level_m": 49.68,
         "hfl_m": 51.46,
@@ -300,7 +315,7 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "baseline_discharge_m3s": 4200.0,
         "danger_discharge_m3s": 28000.0,
         "seismic_zone": "Zone V (Very Severe North-East Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Brahmaputra Basin, Guwahati), Brahmaputra Board & Assam Water Resources Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Middle Brahmaputra Division, Guwahati) & ASDMA",
         "seismic_authority": "National Centre for Seismology (NCS North-East Telemetry) & Assam SDMA (ASDMA)",
         "fire_authority": "Forest Survey of India (FSI Eastern Zone) & Assam Fire & Emergency Services",
         "sdma_name": "Assam State Disaster Management Authority (ASDMA)",
@@ -313,17 +328,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "West Bengal",
         "river_name": "Hooghly River (Bhagirathi–Hooghly)",
         "basin": "Ganga–Brahmaputra–Meghna Delta",
-        "cwc_station": "Garden Reach Tide & River Gauge / Farakka CWC Feeder",
+        "cwc_station": "Farakka / Bhagirathi–Hooghly CWC FloodWatch Station",
+        "cwc_station_code": "003-LGD3BEH",
         "upstream_control": "Farakka Barrage & Damodar Valley Corporation (DVC) Maithon/Panchet Dams",
-        "normal_level_m": 3.60,
-        "warning_level_m": 4.85,
-        "danger_level_m": 5.30,
-        "hfl_m": 6.42,
-        "hfl_year": 2020,
+        "normal_level_m": 18.58,
+        "warning_level_m": 21.25,
+        "danger_level_m": 22.25,
+        "hfl_m": 25.13,
+        "hfl_year": 1998,
         "baseline_discharge_m3s": 1450.0,
         "danger_discharge_m3s": 9800.0,
         "seismic_zone": "Zone III–IV (Bengal Basin Seismic Transition)",
-        "flood_authority": "Central Water Commission (CWC), Damodar Valley Reservoir Regulation Committee & WB Irrigation & Waterways Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Lower Ganga Division), DVC & WB Irrigation Dept",
         "seismic_authority": "National Centre for Seismology (NCS Alipore Kolkata Observatory) & WBDMD",
         "fire_authority": "West Bengal Fire & Emergency Services & Forest Survey of India (FSI Eastern Zone Kolkata)",
         "sdma_name": "West Bengal Department of Disaster Management & Civil Defence (WBDMD)",
@@ -334,19 +350,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "mumbai": {
         "city": "Mumbai",
         "state": "Maharashtra",
-        "river_name": "Mithi River, Dahisar River & Ulhas Estuary",
+        "river_name": "Ulhas & Mithi River Coastal Basin",
         "basin": "Konkan West-Flowing Coastal Basin",
-        "cwc_station": "Kurla–BKC Mithi River Telemetry & Badlapur Ulhas CWC Gauge",
+        "cwc_station": "Badlapur Ulhas CWC FloodWatch Station & BMC Mithi Telemetry",
+        "cwc_station_code": "014-ukdpune",
         "upstream_control": "Vihar, Tulsi & Modak Sagar Municipal Reservoirs + Tidal Gate Control",
-        "normal_level_m": 1.65,
-        "warning_level_m": 2.70,
-        "danger_level_m": 3.40,
-        "hfl_m": 4.85,
-        "hfl_year": 2005,
+        "normal_level_m": 10.22,
+        "warning_level_m": 16.50,
+        "danger_level_m": 17.50,
+        "hfl_m": 26.16,
+        "hfl_year": 2019,
         "baseline_discharge_m3s": 85.0,
         "danger_discharge_m3s": 950.0,
         "seismic_zone": "Zone III (Moderate Peninsular Seismic Zone)",
-        "flood_authority": "BMC Disaster Management Cell (1916), Central Water Commission (CWC Tapi/West Basin) & Maharashtra WRD",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Upper Krishna/Konkan Division) & BMC Disaster Cell (1916)",
         "seismic_authority": "National Centre for Seismology (NCS Colaba Mumbai Observatory) & Maharashtra SDMA",
         "fire_authority": "Mumbai Fire Brigade (MFB), Sanjay Gandhi National Park Forest Division & FSI Vanagni",
         "sdma_name": "BMC Disaster Management Department & Maharashtra SDMA",
@@ -357,19 +374,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "pune": {
         "city": "Pune",
         "state": "Maharashtra",
-        "river_name": "Mutha & Mula Rivers",
+        "river_name": "Mutha, Mula & Bhima Rivers",
         "basin": "Upper Bhima–Krishna Basin",
-        "cwc_station": "Sangam Bridge / Bund Garden Gauge, Pune",
+        "cwc_station": "Phulgaon / Sangam Bridge CWC FloodWatch Station, Pune",
+        "cwc_station_code": "025-ukdpune",
         "upstream_control": "Khadakwasla, Panshet, Varasgaon & Mulshi Dams",
-        "normal_level_m": 542.80,
-        "warning_level_m": 545.20,
-        "danger_level_m": 546.80,
-        "hfl_m": 549.10,
+        "normal_level_m": 540.40,
+        "warning_level_m": 548.00,
+        "danger_level_m": 549.00,
+        "hfl_m": 549.95,
         "hfl_year": 2019,
         "baseline_discharge_m3s": 95.0,
         "danger_discharge_m3s": 1350.0,
         "seismic_zone": "Zone III (Koyna–Western Ghats Seismic Belt)",
-        "flood_authority": "Central Water Commission (CWC Upper Krishna Division, Pune) & Maharashtra Water Resources Dept (Sinchan Bhavan)",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Upper Krishna Division, Pune) & Maharashtra WRD",
         "seismic_authority": "National Centre for Seismology (NCS) & DDMA Pune / Maharashtra SDMA",
         "fire_authority": "Forest Survey of India (FSI Western Ghats) & Pune Municipal Corporation Fire Brigade",
         "sdma_name": "DDMA Pune & Maharashtra State Disaster Management Authority",
@@ -380,19 +398,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "bengaluru": {
         "city": "Bengaluru",
         "state": "Karnataka",
-        "river_name": "Vrishabhavathi & Arkavathi (Cauvery Basin)",
-        "basin": "Upper Cauvery & Dakshina Pinakini Basin",
-        "cwc_station": "Kengeri / Chunchankatte CWC & KSNDMC Telemetric Gauge",
+        "river_name": "Arkavathi & Vrishabhavathi (Cauvery Basin)",
+        "basin": "Upper Cauvery & Arkavathi Basin",
+        "cwc_station": "Kokkedoddy CWC FloodWatch Station (Arkavathi–Cauvery Division)",
+        "cwc_station_code": "0045-CDBNG",
         "upstream_control": "Thippagondanahalli (T.G. Halli), Hesaraghatta & KRS Reservoirs",
-        "normal_level_m": 744.10,
-        "warning_level_m": 746.50,
-        "danger_level_m": 748.00,
-        "hfl_m": 750.40,
+        "normal_level_m": 370.32,
+        "warning_level_m": 373.00,
+        "danger_level_m": 374.00,
+        "hfl_m": 374.25,
         "hfl_year": 2022,
         "baseline_discharge_m3s": 65.0,
         "danger_discharge_m3s": 780.0,
         "seismic_zone": "Zone II (Low Peninsular Seismic Zone)",
-        "flood_authority": "Karnataka State Natural Disaster Monitoring Centre (KSNDMC), CWC Cauvery Division & BBMP Flood Cell",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Cauvery Division, Bengaluru), KSNDMC & BBMP",
         "seismic_authority": "National Centre for Seismology (NCS) & KSNDMC Seismic Monitoring Network",
         "fire_authority": "Forest Survey of India (FSI Southern Zone Bengaluru) & Karnataka State Fire and Emergency Services",
         "sdma_name": "Karnataka State Disaster Management Authority (KSDMA) & KSNDMC",
@@ -403,19 +422,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "chennai": {
         "city": "Chennai",
         "state": "Tamil Nadu",
-        "river_name": "Adyar, Cooum & Kosasthalaiyar Rivers",
-        "basin": "Chennai Metropolitan Coastal River Basin",
-        "cwc_station": "Saidapet Adyar Gauge & Poondi/Chembarambakkam Telemetry",
+        "river_name": "Palar, Adyar & Kosasthalaiyar Rivers",
+        "basin": "Chennai–Palar Coastal River Basin",
+        "cwc_station": "Avarankuppam CWC FloodWatch Station (Palar–Chennai Basin)",
+        "cwc_station_code": "001-SRDCBE",
         "upstream_control": "Chembarambakkam, Poondi, Red Hills (Puzhal) & Cholavaram Reservoirs",
-        "normal_level_m": 7.40,
-        "warning_level_m": 9.80,
-        "danger_level_m": 11.20,
-        "hfl_m": 13.85,
+        "normal_level_m": 365.20,
+        "warning_level_m": 367.21,
+        "danger_level_m": 368.21,
+        "hfl_m": 368.82,
         "hfl_year": 2015,
         "baseline_discharge_m3s": 75.0,
         "danger_discharge_m3s": 1400.0,
         "seismic_zone": "Zone III (Moderate Coastal Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Southern Region, Chennai), Tamil Nadu WRD & Greater Chennai Corporation (GCC)",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Southern Region) & Greater Chennai Corporation (GCC)",
         "seismic_authority": "National Centre for Seismology (NCS Chennai Observatory) & Tamil Nadu SDMA (TNSDMA)",
         "fire_authority": "Tamil Nadu Fire and Rescue Services & Tamil Nadu Forest Department / FSI Vanagni",
         "sdma_name": "Tamil Nadu State Disaster Management Authority (TNSDMA) & GCC (1913)",
@@ -426,19 +446,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "hyderabad": {
         "city": "Hyderabad",
         "state": "Telangana",
-        "river_name": "Musi River",
-        "basin": "Krishna–Musi Sub-Basin",
-        "cwc_station": "Chaderghat / Bapughat Musi Gauge & Damercherla CWC Station",
+        "river_name": "Musi & Godavari–Krishna Basin",
+        "basin": "Krishna–Musi & Godavari Sub-Basin",
+        "cwc_station": "Kaleswaram / Musi Dam CWC FloodWatch Station (Hyderabad Division)",
+        "cwc_station_code": "002-LGDHYD",
         "upstream_control": "Osman Sagar (Gandipet) & Himayat Sagar Flood Gates",
-        "normal_level_m": 499.80,
-        "warning_level_m": 502.50,
-        "danger_level_m": 504.00,
-        "hfl_m": 507.20,
-        "hfl_year": 2020,
+        "normal_level_m": 94.62,
+        "warning_level_m": 103.50,
+        "danger_level_m": 104.75,
+        "hfl_m": 108.19,
+        "hfl_year": 2022,
         "baseline_discharge_m3s": 80.0,
         "danger_discharge_m3s": 1100.0,
         "seismic_zone": "Zone II (Stable Deccan Plateau Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Krishna & Godavari Basin Org, Hyderabad), HYDRAA & Telangana Irrigation Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Hyderabad), HYDRAA & Telangana Irrigation Dept",
         "seismic_authority": "National Centre for Seismology (NCS) & CSIR-NGRI Hyderabad Seismological Observatory",
         "fire_authority": "Telangana State Disaster Response & Fire Services & Telangana Forest Dept / FSI Vanagni",
         "sdma_name": "Telangana SDMA & GHMC Disaster Response (HYDRAA)",
@@ -451,17 +472,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Kerala",
         "river_name": "Periyar & Muvattupuzha Rivers",
         "basin": "Periyar Western Ghats Basin",
-        "cwc_station": "Aluva (Marthandavarma Bridge) & Kalady CWC Stations",
+        "cwc_station": "Neeleeswaram (Kalady) CWC FloodWatch Station, Periyar River",
+        "cwc_station_code": "012-SWRDKOCHI",
         "upstream_control": "Idukki, Idamalayar, Mullaperiyar & Bhoothathankettu Dams",
-        "normal_level_m": 2.10,
-        "warning_level_m": 3.80,
-        "danger_level_m": 4.50,
-        "hfl_m": 7.20,
+        "normal_level_m": 0.86,
+        "warning_level_m": 9.00,
+        "danger_level_m": 10.00,
+        "hfl_m": 12.40,
         "hfl_year": 2018,
         "baseline_discharge_m3s": 210.0,
         "danger_discharge_m3s": 2600.0,
         "seismic_zone": "Zone III (Moderate Western Ghats Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Southern Western Rivers Division, Kochi), Kerala IDRB & KSDMA",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - South Western Rivers Division, Kochi) & KSDMA",
         "seismic_authority": "National Centre for Seismology (NCS) & Kerala State Disaster Management Authority (KSDMA)",
         "fire_authority": "Forest Survey of India (FSI Vanagni), Kerala Forest & Wildlife Dept & Kerala Fire and Rescue Services",
         "sdma_name": "Kerala State Disaster Management Authority (KSDMA)",
@@ -474,17 +496,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Gujarat",
         "river_name": "Sabarmati River",
         "basin": "Sabarmati Basin",
-        "cwc_station": "Subhash Bridge / Vasna Barrage CWC Station, Ahmedabad",
+        "cwc_station": "Subhash Bridge CWC FloodWatch Station, Ahmedabad",
+        "cwc_station_code": "020-MAHGAND",
         "upstream_control": "Dharoi Dam & Vasna Barrage",
-        "normal_level_m": 39.20,
-        "warning_level_m": 41.50,
-        "danger_level_m": 42.80,
-        "hfl_m": 45.10,
+        "normal_level_m": 41.45,
+        "warning_level_m": 44.09,
+        "danger_level_m": 45.34,
+        "hfl_m": 47.45,
         "hfl_year": 2006,
         "baseline_discharge_m3s": 110.0,
         "danger_discharge_m3s": 1750.0,
         "seismic_zone": "Zone III (Moderate Seismic Zone; Kutch adjacent Zone V)",
-        "flood_authority": "Central Water Commission (CWC Mahi & Tapi Basin Org, Gandhinagar) & Gujarat Water Resources Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Mahi & Tapi Basin Org, Gandhinagar) & Gujarat WRD",
         "seismic_authority": "Institute of Seismological Research (ISR Gandhinagar), NCS & Gujarat SDMA (GSDMA)",
         "fire_authority": "Ahmedabad Fire and Emergency Services (AFES) & Gujarat Forest Department / FSI",
         "sdma_name": "Gujarat State Disaster Management Authority (GSDMA)",
@@ -495,19 +518,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "jaipur": {
         "city": "Jaipur",
         "state": "Rajasthan",
-        "river_name": "Dravyavati (Amanishah) & Banas Basin",
+        "river_name": "Chambal & Banas River Basin",
         "basin": "Chambal–Banas Basin",
-        "cwc_station": "Bisalpur / Tonk Banas CWC Gauge & Ramgarh Basin",
-        "upstream_control": "Bisalpur Dam & Chandlai Reservoir",
-        "normal_level_m": 311.50,
-        "warning_level_m": 314.00,
-        "danger_level_m": 315.50,
-        "hfl_m": 317.20,
-        "hfl_year": 2019,
+        "cwc_station": "Dholpur / Bisalpur Chambal–Banas CWC FloodWatch Station",
+        "cwc_station_code": "003-LYDAGRa",
+        "upstream_control": "Bisalpur Dam & Kota Barrage",
+        "normal_level_m": 119.75,
+        "warning_level_m": 129.79,
+        "danger_level_m": 130.79,
+        "hfl_m": 146.57,
+        "hfl_year": 2022,
         "baseline_discharge_m3s": 45.0,
         "danger_discharge_m3s": 680.0,
         "seismic_zone": "Zone II (Low Seismic Intensity)",
-        "flood_authority": "Central Water Commission (CWC Chambal Division, Jaipur) & Rajasthan Water Resources Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Chambal Division, Jaipur) & Rajasthan WRD",
         "seismic_authority": "National Centre for Seismology (NCS Jaipur Observatory) & Rajasthan SDMA",
         "fire_authority": "Rajasthan Forest Department (Jhalana/Nahargarh Reserve), FSI Vanagni & Jaipur Municipal Fire Service",
         "sdma_name": "Rajasthan State Disaster Management Authority (RSDMA)",
@@ -518,19 +542,20 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
     "udaipur": {
         "city": "Udaipur",
         "state": "Rajasthan",
-        "river_name": "Ahar River & Pichola–Fateh Sagar Lake System",
-        "basin": "Berach–Banas Basin",
-        "cwc_station": "Swaroop Sagar Weir & Chittorgarh Berach CWC Gauge",
+        "river_name": "Wakal, Ahar & Sabarmati Headwaters",
+        "basin": "Wakal–Sabarmati & Berach Basin",
+        "cwc_station": "Jotasan CWC FloodWatch Station (Wakal–Udaipur Basin)",
+        "cwc_station_code": "023MAHGAND",
         "upstream_control": "Madar, Swaroop Sagar & Pichola Spillway Gates",
-        "normal_level_m": 584.20,
-        "warning_level_m": 586.50,
-        "danger_level_m": 587.80,
-        "hfl_m": 589.40,
+        "normal_level_m": 286.73,
+        "warning_level_m": 290.00,
+        "danger_level_m": 291.00,
+        "hfl_m": 291.61,
         "hfl_year": 2006,
         "baseline_discharge_m3s": 40.0,
         "danger_discharge_m3s": 550.0,
         "seismic_zone": "Zone II (Low Seismic Intensity)",
-        "flood_authority": "Rajasthan Water Resources Department (Udaipur Circle) & CWC Chambal Basin",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India) & Rajasthan Water Resources Dept (Udaipur Circle)",
         "seismic_authority": "National Centre for Seismology (NCS) & DDMA Udaipur",
         "fire_authority": "Rajasthan Forest Department (Aravalli Circle), FSI Vanagni & Udaipur Fire Service",
         "sdma_name": "DDMA Udaipur & Rajasthan SDMA",
@@ -543,17 +568,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Goa",
         "river_name": "Mandovi (Mhadei) & Zuari Rivers",
         "basin": "West-Flowing Konkan River Basin",
-        "cwc_station": "Ganjim CWC Hydrological Station (Mandovi River)",
+        "cwc_station": "Savarshe CWC FloodWatch Station (Mandovi / Mhadei River)",
+        "cwc_station_code": "048-cdbng",
         "upstream_control": "Anjunem & Selaulim Dam Spillways",
-        "normal_level_m": 6.40,
-        "warning_level_m": 8.20,
-        "danger_level_m": 9.10,
-        "hfl_m": 10.80,
+        "normal_level_m": 8.86,
+        "warning_level_m": 13.50,
+        "danger_level_m": 14.50,
+        "hfl_m": 20.30,
         "hfl_year": 2021,
         "baseline_discharge_m3s": 120.0,
         "danger_discharge_m3s": 1300.0,
         "seismic_zone": "Zone III (Moderate Western Coast Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC) & Goa Department of Water Resources",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India) & Goa Department of Water Resources",
         "seismic_authority": "National Centre for Seismology (NCS) & Goa State Disaster Management Authority (GSDMA)",
         "fire_authority": "Goa Directorate of Fire & Emergency Services & Goa Forest Department / FSI Vanagni",
         "sdma_name": "Goa State Disaster Management Authority (GSDMA)",
@@ -566,17 +592,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Jammu and Kashmir",
         "river_name": "Jhelum River",
         "basin": "Indus–Jhelum Kashmir Valley Basin",
-        "cwc_station": "Ram Munshi Bagh & Sangam Gauge, Srinagar",
+        "cwc_station": "Rammunshibagh (near Srinagar) CWC FloodWatch Station",
+        "cwc_station_code": "005-jhelum",
         "upstream_control": "Sangam Anantnag Inflow & Wular Barrage",
-        "normal_level_m": 1581.50,
-        "warning_level_m": 1583.80,
-        "danger_level_m": 1584.90,
-        "hfl_m": 1587.60,
+        "normal_level_m": 1581.27,
+        "warning_level_m": 1585.48,
+        "danger_level_m": 1586.40,
+        "hfl_m": 1589.00,
         "hfl_year": 2014,
         "baseline_discharge_m3s": 290.0,
         "danger_discharge_m3s": 2900.0,
         "seismic_zone": "Zone V (Very Severe Kashmir Himalayan Seismic Zone)",
-        "flood_authority": "J&K Irrigation & Flood Control Department (I&FC Srinagar) & Central Water Commission (CWC Indus Basin)",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Jhelum Division) & J&K Irrigation & Flood Control Dept",
         "seismic_authority": "National Centre for Seismology (NCS Srinagar Observatory) & J&K SDMA",
         "fire_authority": "Forest Survey of India (FSI Northern Zone), J&K Forest Protection Force & Fire & Emergency Services",
         "sdma_name": "Jammu & Kashmir State Disaster Management Authority (JKSDMA)",
@@ -589,17 +616,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Odisha",
         "river_name": "Mahanadi, Kuakhai & Daya Rivers",
         "basin": "Mahanadi Delta Basin",
-        "cwc_station": "Naraj & Mundali Barrage CWC Gauge, Cuttack–Bhubaneswar",
+        "cwc_station": "Naraj CWC FloodWatch Station (Cuttack–Bhubaneswar Mahanadi Delta)",
+        "cwc_station_code": "036-MDBURLA",
         "upstream_control": "Hirakud Dam & Mundali Barrage",
-        "normal_level_m": 23.20,
+        "normal_level_m": 21.88,
         "warning_level_m": 25.41,
         "danger_level_m": 26.41,
-        "hfl_m": 27.80,
+        "hfl_m": 27.61,
         "hfl_year": 2011,
         "baseline_discharge_m3s": 950.0,
         "danger_discharge_m3s": 14000.0,
         "seismic_zone": "Zone III (Mahanadi Graben Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Mahanadi & Eastern Rivers Org, Bhubaneswar) & Odisha Dept of Water Resources",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Mahanadi Basin, Bhubaneswar) & Odisha DoWR",
         "seismic_authority": "National Centre for Seismology (NCS Bhubaneswar Observatory) & OSDMA",
         "fire_authority": "Odisha Fire & Disaster Response Service & Odisha Forest Dept / FSI Vanagni",
         "sdma_name": "Odisha State Disaster Management Authority (OSDMA)",
@@ -612,17 +640,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "West Bengal",
         "river_name": "Teesta & Rangeet Rivers",
         "basin": "Brahmaputra–Teesta Sub-Basin",
-        "cwc_station": "Coronation Bridge (Sevoke) & Gajoldoba Teesta Barrage CWC Gauge",
+        "cwc_station": "Domohani / Gajoldoba Teesta CWC FloodWatch Station",
+        "cwc_station_code": "022-LBDJPG",
         "upstream_control": "Teesta Low Dam III & IV (NHPC) & Gajoldoba Barrage",
-        "normal_level_m": 145.20,
-        "warning_level_m": 148.00,
-        "danger_level_m": 149.50,
-        "hfl_m": 152.40,
+        "normal_level_m": 85.05,
+        "warning_level_m": 85.65,
+        "danger_level_m": 85.95,
+        "hfl_m": 89.30,
         "hfl_year": 2023,
         "baseline_discharge_m3s": 340.0,
         "danger_discharge_m3s": 3400.0,
         "seismic_zone": "Zone IV–V (Eastern Himalayan Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Teesta Division, Jalpaiguri/Siliguri) & WB Irrigation Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Lower Brahmaputra/Teesta Division, Jalpaiguri) & WB I&WD",
         "seismic_authority": "National Centre for Seismology (NCS) & DDMA Darjeeling",
         "fire_authority": "Forest Survey of India (FSI Vanagni) & West Bengal Forest Department (Hill Circle)",
         "sdma_name": "DDMA Darjeeling & WBDMD",
@@ -635,17 +664,18 @@ INDIA_RIVER_GAUGE_REGISTRY: dict[str, dict[str, Any]] = {
         "state": "Punjab",
         "river_name": "Ravi & Beas–Sutlej Confluence",
         "basin": "Indus–Beas–Sutlej Basin",
-        "cwc_station": "Harike Barrage & Madhopur Headworks Gauge",
+        "cwc_station": "Harike & Pandoa Beas–Sutlej CWC FloodWatch Station",
+        "cwc_station_code": "005-SHDSIM",
         "upstream_control": "Pong Dam (Beas), Bhakra Dam (Sutlej) & Ranjit Sagar Dam (Ravi)",
-        "normal_level_m": 207.80,
-        "warning_level_m": 209.50,
-        "danger_level_m": 210.40,
-        "hfl_m": 212.10,
+        "normal_level_m": 677.14,
+        "warning_level_m": 685.00,
+        "danger_level_m": 687.50,
+        "hfl_m": 689.60,
         "hfl_year": 2023,
         "baseline_discharge_m3s": 310.0,
         "danger_discharge_m3s": 3200.0,
         "seismic_zone": "Zone IV (High Seismic Zone)",
-        "flood_authority": "Central Water Commission (CWC Indus Basin Chandigarh), BBMB & Punjab Water Resources Dept",
+        "flood_authority": "Central Water Commission (CWC FloodWatch India - Indus Basin), BBMB & Punjab Water Resources Dept",
         "seismic_authority": "National Centre for Seismology (NCS) & Punjab SDMA",
         "fire_authority": "Punjab Fire Services & Forest Survey of India (FSI)",
         "sdma_name": "Punjab State Disaster Management Authority (PSDMA)",
@@ -775,14 +805,397 @@ def resolve_india_river_and_authority_profile(
 
 class IndiaDisasterAndRiverClient:
     """Fetches real-time Indian authority disaster alerts (NCS Earthquake, FSI Wildfire, CWC Flood)
-    and live Indian river water level telemetry + 15-day predictions.
+    and live FloodWatch India (`ffs.india-water.gov.in` & `sachet.ndma.gov.in`) river water level telemetry + 15-day predictions.
     """
 
     FLOOD_API_URL = "https://flood-api.open-meteo.com/v1/flood"
     USGS_FDSN_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query"
+    CWC_FFS_BASE_URL = "https://ffs.india-water.gov.in"
+    NDMA_SACHET_CAP_URL = "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml"
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or load_settings()
+
+    @staticmethod
+    def _cwc_spec_op(op: str, field: str, val: Any, rel: bool = False) -> dict[str, Any]:
+        return {
+            "expression": {
+                "fieldName": field,
+                "operator": op,
+                "value": val,
+                "valueIsRelationField": rel,
+            }
+        }
+
+    @staticmethod
+    def _cwc_spec_and(items: list[dict[str, Any]]) -> dict[str, Any]:
+        res: dict[str, Any] | None = None
+        for item in items:
+            res = item if res is None else {"where": res, "and": item}
+        if res is not None:
+            res["unique"] = True
+        return res or {}
+
+    async def _fetch_cwc_floodwatch_live_async(
+        self,
+        profile: dict[str, Any],
+        location_name: str,
+        district_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch real-time river gauge readings, thresholds, and active warnings directly from
+        CWC FloodWatch India (`https://ffs.india-water.gov.in`).
+        """
+        station_code = str(profile.get("cwc_station_code") or "015-UYDDEL").strip()
+        clean_city = (district_id or location_name.split(",")[0]).strip()
+        cache_key = f"{station_code}:{clean_city.lower()}"
+        now_ts = time.time()
+        if cache_key in _CWC_LIVE_CACHE and (now_ts - _CWC_LIVE_CACHE[cache_key][0]) < _CACHE_TTL:
+            return _CWC_LIVE_CACHE[cache_key][1]
+
+        result: dict[str, Any] = {
+            "station_code": station_code,
+            "station_name": profile.get("cwc_station"),
+            "river_name": profile.get("river_name"),
+            "observed_water_level_m": None,
+            "last_observed_at": None,
+            "hourly_readings": [],
+            "hourly_trend": None,
+            "warning_level_m": profile.get("warning_level_m"),
+            "danger_level_m": profile.get("danger_level_m"),
+            "hfl_m": profile.get("hfl_m"),
+            "hfl_date": None,
+            "forecasted_water_level_m": None,
+            "forecasted_at": None,
+            "station_alert_status": "NORMAL",
+            "active_national_warnings_count": 0,
+            "active_national_warnings": [],
+            "live_cwc_telemetry": False,
+            "source_portal": "https://ffs.india-water.gov.in",
+        }
+
+        try:
+            async with httpx.AsyncClient(
+                verify=False,
+                timeout=httpx.Timeout(4.8, connect=2.5),
+                follow_redirects=True,
+            ) as client:
+                # 1. Optional dynamic station resolution if city/district is not one of the primary registry keys
+                city_lower = clean_city.lower()
+                is_direct_registry_city = (
+                    city_lower in INDIA_RIVER_GAUGE_REGISTRY or city_lower in CITY_RIVER_ALIASES
+                )
+                if not is_direct_registry_city and len(clean_city) >= 3:
+                    try:
+                        base_ff = self._cwc_spec_op("null", "floodForecastStaticStationCode.stationCode", "false")
+                        spec_dyn = self._cwc_spec_and([
+                            base_ff,
+                            self._cwc_spec_op("like", "tahsilId.districtId.name", clean_city),
+                        ])
+                        dyn_resp = await client.get(
+                            f"{self.CWC_FFS_BASE_URL}/iam/api/layer-station/specification/page",
+                            headers={
+                                "Content-Type": "application/json",
+                                "class-name": "ForecastDetailLayerStationDto",
+                                "Accept": "application/json",
+                            },
+                            params={
+                                "specification": json.dumps(spec_dyn),
+                                "page-number": "0",
+                                "page-size": "3",
+                            },
+                        )
+                        if dyn_resp.status_code == 200:
+                            dyn_stations = dyn_resp.json()
+                            if isinstance(dyn_stations, list) and dyn_stations:
+                                chosen = dyn_stations[0]
+                                for cand in dyn_stations:
+                                    ff_obj = cand.get("floodForecastStaticStationCode")
+                                    if isinstance(ff_obj, dict) and ff_obj.get("dangerLevel"):
+                                        chosen = cand
+                                        break
+                                dyn_code = chosen.get("stationCode")
+                                if dyn_code:
+                                    station_code = str(dyn_code).strip()
+                                    result["station_code"] = station_code
+                                    if chosen.get("name"):
+                                        result["station_name"] = f"{chosen['name']} CWC FloodWatch Station"
+                                    riv_obj = chosen.get("river")
+                                    if isinstance(riv_obj, dict) and riv_obj.get("name") and riv_obj["name"] != "-":
+                                        result["river_name"] = f"{riv_obj['name']} River"
+                                    ff_obj = chosen.get("floodForecastStaticStationCode")
+                                    if isinstance(ff_obj, dict):
+                                        if ff_obj.get("warningLevel"):
+                                            result["warning_level_m"] = float(ff_obj["warningLevel"])
+                                        if ff_obj.get("dangerLevel"):
+                                            result["danger_level_m"] = float(ff_obj["dangerLevel"])
+                                        if ff_obj.get("highestFlowLevel"):
+                                            result["hfl_m"] = float(ff_obj["highestFlowLevel"])
+                                        if ff_obj.get("highestFlowLevelDate"):
+                                            result["hfl_date"] = str(ff_obj["highestFlowLevelDate"])
+                    except Exception as dyn_exc:
+                        logger.debug(f"CWC dynamic station lookup skipped for {clean_city}: {dyn_exc}")
+
+                # 2. Fetch live hourly gauge readings (`NewEntryDataDto`, datatypeCode="HHS"),
+                #    short-range forecast (`NewForecastedEntryDataDto`), and national above-warning queue concurrently
+                sort_obs = {"sortOrderDtos": [{"sortDirection": "DESC", "field": "id.dataTime"}]}
+                spec_obs = self._cwc_spec_and([
+                    self._cwc_spec_op("eq", "id.stationCode", station_code),
+                    self._cwc_spec_op("eq", "id.datatypeCode", "HHS"),
+                ])
+                obs_task = client.get(
+                    f"{self.CWC_FFS_BASE_URL}/iam/api/new-entry-data/specification/sorted-page",
+                    headers={
+                        "Content-Type": "application/json",
+                        "class-name": "NewEntryDataDto",
+                        "Accept": "application/json",
+                    },
+                    params={
+                        "specification": json.dumps(spec_obs),
+                        "sort-criteria": json.dumps(sort_obs),
+                        "page-number": "0",
+                        "page-size": "12",
+                    },
+                )
+
+                sort_fc = {"sortOrderDtos": [{"sortDirection": "DESC", "field": "id.forecastedDate"}]}
+                spec_fc = self._cwc_spec_op("eq", "id.stationCode", station_code)
+                fc_task = client.get(
+                    f"{self.CWC_FFS_BASE_URL}/iam/api/new-forecasted-entry-data/specification/sorted-page",
+                    headers={
+                        "Content-Type": "application/json",
+                        "class-name": "NewForecastedEntryDataDto",
+                        "Accept": "application/json",
+                    },
+                    params={
+                        "specification": json.dumps(spec_fc),
+                        "sort-criteria": json.dumps(sort_fc),
+                        "page-number": "0",
+                        "page-size": "5",
+                    },
+                )
+
+                # National above-warning queue (cached for 15m)
+                warn_cached = _CWC_WARNING_QUEUE_CACHE.get("india")
+                if warn_cached and (now_ts - warn_cached[0]) < _CACHE_TTL:
+                    warn_task = None
+                else:
+                    warn_task = client.get(
+                        f"{self.CWC_FFS_BASE_URL}/ffm/api/station-water-level-above-warning/",
+                        headers={
+                            "Content-Type": "application/json",
+                            "class-name": "StationWaterLevelAboveWarningDto",
+                            "Accept": "application/json",
+                        },
+                    )
+
+                tasks = [obs_task, fc_task] + ([warn_task] if warn_task is not None else [])
+                responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+                obs_resp = responses[0]
+                fc_resp = responses[1]
+                warn_resp = responses[2] if len(responses) > 2 else None
+
+                # Parse hourly gauge observations
+                if not isinstance(obs_resp, Exception) and obs_resp.status_code == 200:
+                    obs_rows = obs_resp.json()
+                    if isinstance(obs_rows, list):
+                        valid_hourly: list[dict[str, Any]] = []
+                        for row in obs_rows:
+                            if not isinstance(row, dict):
+                                continue
+                            val = row.get("dataValidatedValue")
+                            if val is None:
+                                val = row.get("dataValue")
+                            if val is None:
+                                continue
+                            f_val = float(val)
+                            if f_val <= -900.0:
+                                continue
+                            dt_str = (row.get("id") or {}).get("dataTime")
+                            if dt_str:
+                                valid_hourly.append({
+                                    "timestamp": str(dt_str),
+                                    "water_level_m": round(f_val, 3),
+                                })
+                        if valid_hourly:
+                            result["observed_water_level_m"] = round(valid_hourly[0]["water_level_m"], 2)
+                            result["last_observed_at"] = valid_hourly[0]["timestamp"]
+                            result["hourly_readings"] = valid_hourly[:12]
+                            result["live_cwc_telemetry"] = True
+                            if len(valid_hourly) >= 2:
+                                compare_idx = min(len(valid_hourly) - 1, 5)
+                                delta_hr = valid_hourly[0]["water_level_m"] - valid_hourly[compare_idx]["water_level_m"]
+                                if delta_hr >= 0.05:
+                                    result["hourly_trend"] = "Rising"
+                                elif delta_hr <= -0.05:
+                                    result["hourly_trend"] = "Receding"
+                                else:
+                                    result["hourly_trend"] = "Steady"
+
+                # Parse CWC short-range forecast if present
+                if not isinstance(fc_resp, Exception) and fc_resp.status_code == 200:
+                    fc_rows = fc_resp.json()
+                    if isinstance(fc_rows, list) and fc_rows:
+                        for f_row in fc_rows:
+                            if not isinstance(f_row, dict):
+                                continue
+                            f_val = f_row.get("forecastedValue") or f_row.get("dataValue") or f_row.get("value")
+                            f_dt = (f_row.get("id") or {}).get("forecastedDate")
+                            if f_val is not None and float(f_val) > -900.0:
+                                result["forecasted_water_level_m"] = round(float(f_val), 2)
+                                result["forecasted_at"] = str(f_dt or "")
+                                break
+
+                # Parse national above-warning queue
+                warn_list: list[dict[str, Any]] = []
+                if warn_cached and (now_ts - warn_cached[0]) < _CACHE_TTL:
+                    warn_list = warn_cached[1]
+                elif warn_resp is not None and not isinstance(warn_resp, Exception) and warn_resp.status_code == 200:
+                    raw_warn = warn_resp.json()
+                    if isinstance(raw_warn, list):
+                        for w in raw_warn:
+                            if isinstance(w, dict) and w.get("stationCode"):
+                                warn_list.append({
+                                    "station_code": str(w.get("stationCode")),
+                                    "status": str(w.get("status") or "WARNING"),
+                                    "trend": str(w.get("trend") or "STEADY"),
+                                    "water_level_m": round(float(w.get("value") or 0.0), 2),
+                                })
+                        _CWC_WARNING_QUEUE_CACHE["india"] = (now_ts, warn_list)
+
+                result["active_national_warnings_count"] = len(warn_list)
+                result["active_national_warnings"] = warn_list[:8]
+
+                # Check if this station is in the active above-warning queue
+                for w_item in warn_list:
+                    if w_item["station_code"].lower() == station_code.lower():
+                        result["station_alert_status"] = w_item["status"]
+                        if result["observed_water_level_m"] is None and w_item["water_level_m"] > 0:
+                            result["observed_water_level_m"] = w_item["water_level_m"]
+                            result["live_cwc_telemetry"] = True
+                        if w_item.get("trend") in ("RISING", "FALLING", "STEADY"):
+                            result["hourly_trend"] = (
+                                "Rising" if w_item["trend"] == "RISING"
+                                else ("Receding" if w_item["trend"] == "FALLING" else "Steady")
+                            )
+                        break
+
+        except Exception as exc:
+            logger.debug(f"CWC FloodWatch India live fetch skipped for {station_code}: {exc}")
+
+        _CWC_LIVE_CACHE[cache_key] = (now_ts, result)
+        return result
+
+    async def _fetch_sachet_cap_alerts_async(
+        self, profile: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Fetch live Common Alerting Protocol (CAP) alerts from NDMA SACHET (`sachet.ndma.gov.in`),
+        including official Central Water Commission (CWC) FloodWatch India river bulletins, IMD alerts, and SDMA alerts.
+        """
+        now_ts = time.time()
+        cached_all = _SACHET_CAP_CACHE.get("all_india")
+        raw_items: list[dict[str, Any]] = []
+
+        if cached_all and (now_ts - cached_all[0]) < _CACHE_TTL:
+            raw_items = cached_all[1]
+        else:
+            try:
+                async with httpx.AsyncClient(
+                    verify=False,
+                    timeout=httpx.Timeout(4.5, connect=2.5),
+                    follow_redirects=True,
+                ) as client:
+                    resp = await client.get(self.NDMA_SACHET_CAP_URL)
+                    if resp.status_code == 200 and resp.text:
+                        root = ET.fromstring(resp.text)
+                        for item in root.findall(".//item")[:100]:
+                            title = html.unescape(item.findtext("title") or "").strip()
+                            author = html.unescape(item.findtext("author") or "").strip()
+                            pub_str = (item.findtext("pubDate") or "").strip()
+                            link = (item.findtext("link") or "https://sachet.ndma.gov.in").strip()
+                            if not title:
+                                continue
+                            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                            age_days = 0
+                            if pub_str:
+                                try:
+                                    dt = parsedate_to_datetime(pub_str)
+                                    if dt.tzinfo is None:
+                                        dt = dt.replace(tzinfo=timezone.utc)
+                                    date_str = dt.strftime("%Y-%m-%d")
+                                    age_days = max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 86400))
+                                except Exception:
+                                    pass
+                            raw_items.append({
+                                "title": title,
+                                "author": author,
+                                "date": date_str,
+                                "age_days": age_days,
+                                "url": link,
+                            })
+                        _SACHET_CAP_CACHE["all_india"] = (now_ts, raw_items)
+            except Exception as exc:
+                logger.debug(f"NDMA SACHET CAP RSS fetch skipped: {exc}")
+
+        if not raw_items:
+            return []
+
+        city_tokens = [t.strip().lower() for t in re.split(r"[/,()\-]", profile["city"]) if len(t.strip()) >= 3]
+        state_lower = profile["state"].lower()
+        river_tokens = [
+            t.strip().lower()
+            for t in re.split(r"[/,()\-\s–]", profile["river_name"])
+            if len(t.strip()) >= 4 and t.strip().lower() not in ("river", "rivers", "basin", "confluence")
+        ]
+
+        matched_cap: list[dict[str, Any]] = []
+        cwc_national_cap: list[dict[str, Any]] = []
+
+        for item in raw_items:
+            t_low = item["title"].lower()
+            a_low = item["author"].lower()
+            is_cwc = "(cwc)" in a_low or "central water commission" in a_low or "flood situation" in t_low
+
+            hazard_type = "flood"
+            authority_label = profile["flood_authority"]
+            if any(w in t_low for w in ("earthquake", "tremor", "seismic")):
+                hazard_type = "earthquake"
+                authority_label = profile["seismic_authority"]
+            elif any(w in t_low for w in ("forest fire", "wildfire")):
+                hazard_type = "fire"
+                authority_label = profile["fire_authority"]
+            elif is_cwc:
+                hazard_type = "flood"
+                authority_label = "Central Water Commission (CWC FloodWatch India via NDMA SACHET CAP)"
+
+            severity = "Moderate"
+            if any(w in t_low for w in ("severe flood", "extreme flood", "danger", "red alert", "heavy to very heavy")):
+                severity = "High"
+
+            cap_entry = {
+                "id": f"sachet-cap-{hashlib.sha256(item['title'].encode('utf-8')).hexdigest()[:10]}",
+                "hazard_type": hazard_type,
+                "title": item["title"],
+                "authority": authority_label,
+                "publisher": item["author"] or "NDMA SACHET CAP (Govt of India)",
+                "date": item["date"],
+                "age_days": item["age_days"],
+                "severity": severity,
+                "url": "https://ffs.india-water.gov.in" if is_cwc else item["url"],
+            }
+
+            if (
+                state_lower in t_low
+                or state_lower in a_low
+                or any(ct in t_low for ct in city_tokens)
+                or any(rt in t_low for rt in river_tokens)
+            ):
+                matched_cap.append(cap_entry)
+            elif is_cwc:
+                cwc_national_cap.append(cap_entry)
+
+        # Prioritize local state/city/river CAP alerts, followed by national CWC FloodWatch CAP bulletins
+        return (matched_cap + cwc_national_cap)[:6]
 
     async def _fetch_glofas_river_discharge_async(self, lat: float, lon: float) -> dict[str, Any]:
         """Fetch real-time & 15-day forecasted river discharge (m³/s) from Open-Meteo Flood API."""
@@ -1001,14 +1414,38 @@ class IndiaDisasterAndRiverClient:
             lon=lon,
         )
 
-        # Fetch GloFAS river discharge, NCS radial earthquakes, and Indian authority bulletins concurrently
+        # Fetch CWC FloodWatch India live station telemetry, NDMA SACHET CAP alerts,
+        # GloFAS river discharge, NCS radial earthquakes, and Indian authority bulletins concurrently
+        cwc_live_task = asyncio.create_task(
+            self._fetch_cwc_floodwatch_live_async(profile, location_name, district_id)
+        )
+        sachet_cap_task = asyncio.create_task(self._fetch_sachet_cap_alerts_async(profile))
         glofas_task = asyncio.create_task(self._fetch_glofas_river_discharge_async(lat, lon))
         ncs_task = asyncio.create_task(self._fetch_ncs_india_earthquakes_async(lat, lon, profile))
         bulletins_task = asyncio.create_task(self._fetch_india_authority_bulletins_async(profile))
 
-        glofas_raw, ncs_quakes, bulletins = await asyncio.gather(
-            glofas_task, ncs_task, bulletins_task, return_exceptions=True
+        cwc_live, sachet_cap_alerts, glofas_raw, ncs_quakes, bulletins = await asyncio.gather(
+            cwc_live_task, sachet_cap_task, glofas_task, ncs_task, bulletins_task, return_exceptions=True
         )
+        if isinstance(cwc_live, Exception) or not isinstance(cwc_live, dict):
+            cwc_live = {
+                "station_code": profile.get("cwc_station_code", "015-UYDDEL"),
+                "station_name": profile.get("cwc_station"),
+                "river_name": profile.get("river_name"),
+                "observed_water_level_m": None,
+                "last_observed_at": None,
+                "hourly_readings": [],
+                "hourly_trend": None,
+                "forecasted_water_level_m": None,
+                "forecasted_at": None,
+                "station_alert_status": "NORMAL",
+                "active_national_warnings_count": 0,
+                "active_national_warnings": [],
+                "live_cwc_telemetry": False,
+                "source_portal": "https://ffs.india-water.gov.in",
+            }
+        if isinstance(sachet_cap_alerts, Exception) or not isinstance(sachet_cap_alerts, list):
+            sachet_cap_alerts = []
         if isinstance(glofas_raw, Exception):
             glofas_raw = {}
         if isinstance(ncs_quakes, Exception):
@@ -1016,13 +1453,41 @@ class IndiaDisasterAndRiverClient:
         if isinstance(bulletins, Exception):
             bulletins = []
 
-        # ── Build CWC River Water Level & 15-Day Flood Prediction Model ──────
+        # Merge NDMA SACHET CAP alerts (including official CWC FloodWatch CAP items) at the front of bulletins
+        if sachet_cap_alerts:
+            bulletins = sachet_cap_alerts + bulletins
+
+        # Apply any dynamic station metadata discovered from CWC FloodWatch India
+        if cwc_live.get("station_name"):
+            profile["cwc_station"] = str(cwc_live["station_name"])
+        if cwc_live.get("station_code"):
+            profile["cwc_station_code"] = str(cwc_live["station_code"])
+        if cwc_live.get("river_name"):
+            profile["river_name"] = str(cwc_live["river_name"])
+        if cwc_live.get("warning_level_m") is not None:
+            profile["warning_level_m"] = float(cwc_live["warning_level_m"])
+        if cwc_live.get("danger_level_m") is not None:
+            profile["danger_level_m"] = float(cwc_live["danger_level_m"])
+        if cwc_live.get("hfl_m") is not None:
+            profile["hfl_m"] = float(cwc_live["hfl_m"])
+
+        # ── Build CWC FloodWatch India River Water Level & 15-Day Prediction Model ──
         normal_lvl = float(profile["normal_level_m"])
         warning_lvl = float(profile["warning_level_m"])
         danger_lvl = float(profile["danger_level_m"])
         hfl_lvl = float(profile["hfl_m"])
         base_q = float(profile["baseline_discharge_m3s"])
         danger_q = float(profile["danger_discharge_m3s"])
+        cwc_observed_lvl: float | None = (
+            float(cwc_live["observed_water_level_m"])
+            if cwc_live.get("observed_water_level_m") is not None
+            else None
+        )
+        cwc_forecasted_lvl: float | None = (
+            float(cwc_live["forecasted_water_level_m"])
+            if cwc_live.get("forecasted_water_level_m") is not None
+            else None
+        )
 
         # Extract daily rainfall from weather_data if available
         rain_by_date: dict[str, float] = {}
@@ -1057,21 +1522,42 @@ class IndiaDisasterAndRiverClient:
 
         span_to_danger_m = max(0.5, danger_lvl - normal_lvl)
 
+        # First pass: compute raw hydraulic stage rise for each day so we can anchor day 0
+        # to the live CWC FloodWatch India gauge observation (`cwc_observed_lvl`) when available.
+        raw_stage_rises: list[float] = []
+        calibrated_qs: list[tuple[float, float]] = []
+        today_idx = 0
         for idx, d_str in enumerate(times):
+            if d_str == today_str:
+                today_idx = idx
             raw_q = discharges[idx] if idx < len(discharges) and discharges[idx] is not None else base_q
             raw_q_max = discharges_max[idx] if idx < len(discharges_max) and discharges_max[idx] is not None else float(raw_q) * 1.12
+            rain_mm = rain_by_date.get(d_str, 0.0)
+            calibrated_q = float(raw_q) * scale_factor + (rain_mm * (base_q * 0.018))
+            calibrated_q_max = max(calibrated_q, float(raw_q_max) * scale_factor + (rain_mm * (base_q * 0.025)))
+            q_ratio = max(0.0, (calibrated_q - base_q * 0.65) / max(10.0, danger_q - base_q * 0.65))
+            stage_rise_m = span_to_danger_m * math.pow(q_ratio, 0.62)
+            raw_stage_rises.append(stage_rise_m)
+            calibrated_qs.append((calibrated_q, calibrated_q_max))
 
+        today_stage_rise = raw_stage_rises[today_idx] if raw_stage_rises else 0.0
+
+        for idx, d_str in enumerate(times):
+            calibrated_q, calibrated_q_max = calibrated_qs[idx]
+            stage_rise_m = raw_stage_rises[idx]
             rain_mm = rain_by_date.get(d_str, 0.0)
             rain_prob = rain_prob_by_date.get(d_str, 15.0)
 
-            # Calibrated river discharge in m³/s incorporating catchment rainfall runoff
-            calibrated_q = float(raw_q) * scale_factor + (rain_mm * (base_q * 0.018))
-            calibrated_q_max = max(calibrated_q, float(raw_q_max) * scale_factor + (rain_mm * (base_q * 0.025)))
-
-            # Hydraulic stage-discharge rating curve (Manning power-law stage interpolation)
-            q_ratio = max(0.0, (calibrated_q - base_q * 0.65) / max(10.0, danger_q - base_q * 0.65))
-            stage_rise_m = span_to_danger_m * math.pow(q_ratio, 0.62)
-            water_level_m = round(min(hfl_lvl + 0.5, normal_lvl + stage_rise_m), 2)
+            if cwc_observed_lvl is not None:
+                if d_str == today_str:
+                    water_level_m = round(cwc_observed_lvl, 2)
+                elif idx == today_idx + 1 and cwc_forecasted_lvl is not None:
+                    water_level_m = round(cwc_forecasted_lvl, 2)
+                else:
+                    delta_rise = stage_rise_m - today_stage_rise
+                    water_level_m = round(min(hfl_lvl + 0.5, cwc_observed_lvl + delta_rise), 2)
+            else:
+                water_level_m = round(min(hfl_lvl + 0.5, normal_lvl + stage_rise_m), 2)
 
             # Determine CWC flood stage and probability
             if water_level_m >= danger_lvl:
@@ -1118,35 +1604,46 @@ class IndiaDisasterAndRiverClient:
         next_7_pts = forward_series[:7]
         peak_7d_pt = max(next_7_pts, key=lambda x: x["water_level_m"]) if next_7_pts else current_pt
 
-        # Compute inflow trend (Rising / Falling / Steady)
-        if len(forward_series) >= 3:
+        # Compute inflow trend (prefer live CWC hourly gauge trend if available, otherwise 48h hydrological delta)
+        if cwc_live.get("hourly_trend") in ("Rising", "Receding") and abs(
+            (forward_series[2]["water_level_m"] - current_pt["water_level_m"]) if len(forward_series) >= 3 else 0.0
+        ) < 0.25:
+            inflow_trend = str(cwc_live["hourly_trend"])
+        elif len(forward_series) >= 3:
             delta_48h = forward_series[2]["water_level_m"] - current_pt["water_level_m"]
             if delta_48h >= 0.18:
                 inflow_trend = "Rising"
             elif delta_48h <= -0.18:
                 inflow_trend = "Receding"
             else:
-                inflow_trend = "Steady"
+                inflow_trend = str(cwc_live.get("hourly_trend") or "Steady")
         else:
-            inflow_trend = "Steady"
+            inflow_trend = str(cwc_live.get("hourly_trend") or "Steady")
 
         margin_to_danger_m = round(danger_lvl - current_pt["water_level_m"], 2)
         margin_to_warning_m = round(warning_lvl - current_pt["water_level_m"], 2)
 
+        station_tag = f"{profile['cwc_station']} (CWC Code: {profile.get('cwc_station_code', 'N/A')})"
+        obs_time_note = (
+            f" [Live FloodWatch India reading at {cwc_live['last_observed_at']}]"
+            if cwc_live.get("live_cwc_telemetry") and cwc_live.get("last_observed_at")
+            else ""
+        )
+
         if peak_7d_pt["stage"] == "danger":
             prediction_summary = (
-                f"CWC Flood Alert: {profile['river_name']} at {profile['cwc_station']} is projected to reach "
+                f"CWC FloodWatch India Alert: {profile['river_name']} at {station_tag}{obs_time_note} is projected to reach "
                 f"{peak_7d_pt['water_level_m']} m (crossing Danger Level {danger_lvl} m) around {peak_7d_pt['date']} "
                 f"with peak discharge of {peak_7d_pt['discharge_m3s']} m³/s ({peak_7d_pt['discharge_cusecs']:,} cusecs)."
             )
         elif peak_7d_pt["stage"] == "warning":
             prediction_summary = (
-                f"CWC Watch Bulletin: {profile['river_name']} at {profile['cwc_station']} is projected to approach/cross "
+                f"CWC FloodWatch India Watch: {profile['river_name']} at {station_tag}{obs_time_note} is projected to approach/cross "
                 f"Warning Level ({warning_lvl} m) peaking at {peak_7d_pt['water_level_m']} m on {peak_7d_pt['date']}."
             )
         else:
             prediction_summary = (
-                f"CWC Hydrological Outlook: {profile['river_name']} at {profile['cwc_station']} is flowing at "
+                f"CWC FloodWatch India Telemetry: {profile['river_name']} at {station_tag}{obs_time_note} is flowing at "
                 f"{current_pt['water_level_m']} m ({abs(margin_to_danger_m):.2f} m below Danger Mark {danger_lvl} m). "
                 f"7-day predicted peak is {peak_7d_pt['water_level_m']} m ({peak_7d_pt['stage_label']}) with {inflow_trend.lower()} barrage inflow."
             )
@@ -1184,6 +1681,8 @@ class IndiaDisasterAndRiverClient:
                         "title": title_txt,
                         "authority": profile["flood_authority"],
                         "cwc_station": profile["cwc_station"],
+                        "cwc_station_code": profile.get("cwc_station_code", cwc_live.get("station_code", "015-UYDDEL")),
+                        "live_cwc_telemetry": bool(cwc_live.get("live_cwc_telemetry")),
                         "river_name": profile["river_name"],
                         "water_level_m": current_pt["water_level_m"],
                         "danger_level_m": danger_lvl,
@@ -1279,6 +1778,7 @@ class IndiaDisasterAndRiverClient:
             "river_name": profile["river_name"],
             "basin": profile["basin"],
             "cwc_station": profile["cwc_station"],
+            "cwc_station_code": profile.get("cwc_station_code", cwc_live.get("station_code", "015-UYDDEL")),
             "upstream_control": profile["upstream_control"],
             "current_water_level_m": current_pt["water_level_m"],
             "normal_level_m": normal_lvl,
@@ -1300,6 +1800,23 @@ class IndiaDisasterAndRiverClient:
             "flood_probability_7d_pct": max((pt["flood_probability_pct"] for pt in next_7_pts), default=current_pt["flood_probability_pct"]),
             "prediction_summary": prediction_summary,
             "seismic_zone": profile["seismic_zone"],
+            "floodwatch_india": {
+                "live_cwc_telemetry": bool(cwc_live.get("live_cwc_telemetry")),
+                "station_code": profile.get("cwc_station_code", cwc_live.get("station_code")),
+                "station_name": profile["cwc_station"],
+                "observed_water_level_m": cwc_live.get("observed_water_level_m"),
+                "last_observed_at": cwc_live.get("last_observed_at"),
+                "hourly_readings": cwc_live.get("hourly_readings", []),
+                "hourly_trend": cwc_live.get("hourly_trend") or inflow_trend,
+                "forecasted_water_level_m": cwc_live.get("forecasted_water_level_m"),
+                "forecasted_at": cwc_live.get("forecasted_at"),
+                "station_alert_status": cwc_live.get("station_alert_status", "NORMAL"),
+                "active_national_warnings_count": cwc_live.get("active_national_warnings_count", 0),
+                "active_national_warnings": cwc_live.get("active_national_warnings", []),
+                "sachet_cap_alerts_count": len(sachet_cap_alerts),
+                "source_portal": "https://ffs.india-water.gov.in",
+                "sachet_cap_feed": "https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml",
+            },
             "authorities": {
                 "flood": profile["flood_authority"],
                 "earthquake": profile["seismic_authority"],
@@ -1311,7 +1828,8 @@ class IndiaDisasterAndRiverClient:
             "ncs_recent_earthquakes": ncs_quakes[:5],
             "indian_authority_bulletins": bulletins[:8],
             "data_sources": [
-                "Central Water Commission (CWC) National Flood Forecasting Network (ffs.india-water.gov.in)",
+                "Central Water Commission (CWC) FloodWatch India Live Telemetry (ffs.india-water.gov.in)",
+                "NDMA SACHET Common Alerting Protocol (CAP) CWC/IMD/SDMA Feed (sachet.ndma.gov.in)",
                 "National Centre for Seismology (NCS), Ministry of Earth Sciences (seismo.gov.in)",
                 "Forest Survey of India (FSI) SNPP-VIIRS Vanagni Forest Fire Alert System (fsi.nic.in)",
                 "India Meteorological Department (IMD) & Copernicus GloFAS Hydrological Model",

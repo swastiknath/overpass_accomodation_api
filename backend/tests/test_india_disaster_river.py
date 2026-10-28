@@ -16,7 +16,8 @@ from llm.explainer import LLMExplainer
 def test_resolve_india_river_and_authority_profile_cities():
     delhi = resolve_india_river_and_authority_profile("New Delhi, Delhi, India", state="Delhi", lat=28.6139, lon=77.2090)
     assert "Yamuna" in delhi["river_name"]
-    assert "Old Railway Bridge" in delhi["cwc_station"]
+    assert "Delhi Railway Bridge" in delhi["cwc_station"]
+    assert delhi["cwc_station_code"] == "015-UYDDEL"
     assert delhi["warning_level_m"] == 204.50
     assert delhi["danger_level_m"] == 205.33
     assert "NCS" in delhi["seismic_authority"]
@@ -26,11 +27,13 @@ def test_resolve_india_river_and_authority_profile_cities():
     manali = resolve_india_river_and_authority_profile("Manali, Kullu, Himachal Pradesh, India", state="Himachal Pradesh", lat=32.2396, lon=77.1887)
     assert "Beas" in manali["river_name"]
     assert "Bhuntar" in manali["cwc_station"]
+    assert manali["cwc_station_code"] == "005-SHDSIM"
     assert "Zone V" in manali["seismic_zone"]
     assert "FSI Vanagni" in manali["fire_authority"]
 
     guwahati = resolve_india_river_and_authority_profile("Guwahati, Assam, India", state="Assam", lat=26.1445, lon=91.7362)
     assert "Brahmaputra" in guwahati["river_name"]
+    assert guwahati["cwc_station_code"] == "001-MBDGHY"
     assert "ASDMA" in guwahati["sdma_name"]
 
 
@@ -46,14 +49,26 @@ async def test_fetch_india_hazards_and_river_async():
     )
     assert telemetry["is_in_india"] is True
     assert "Yamuna" in telemetry["river_name"]
+    assert telemetry["cwc_station_code"] == "015-UYDDEL"
     assert telemetry["current_water_level_m"] > 190.0
     assert telemetry["danger_level_m"] == 205.33
     assert telemetry["current_discharge_m3s"] > 0
     assert telemetry["current_discharge_cusecs"] > 0
     assert len(telemetry["forecast_15day"]) >= 7
+    assert "floodwatch_india" in telemetry
+    fw = telemetry["floodwatch_india"]
+    assert fw["source_portal"] == "https://ffs.india-water.gov.in"
+    assert fw["station_code"] == "015-UYDDEL"
+    if fw["live_cwc_telemetry"]:
+        assert fw["observed_water_level_m"] is not None
+        assert abs(telemetry["current_water_level_m"] - fw["observed_water_level_m"]) < 0.05
+        assert len(fw["hourly_readings"]) >= 1
     assert "NCS" in telemetry["authorities"]["earthquake"]
     assert "FSI" in telemetry["authorities"]["wildfire"]
     assert "Central Water Commission" in telemetry["authorities"]["flood"]
+    assert any(r.source == "cwc_ffs" for r in records)
+    cwc_rec = next(r for r in records if r.source == "cwc_ffs")
+    assert cwc_rec.raw_payload.get("cwc_station_code") == "015-UYDDEL"
 
 
 def test_historical_stats_uses_indian_authorities_for_indian_cities():

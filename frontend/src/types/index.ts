@@ -246,6 +246,32 @@ export interface IndiaAuthorityBulletin {
   url?: string;
 }
 
+export interface FloodWatchIndiaLiveInfo {
+  live_cwc_telemetry?: boolean;
+  station_code?: string;
+  station_name?: string;
+  observed_water_level_m?: number | null;
+  last_observed_at?: string | null;
+  hourly_readings?: Array<{
+    timestamp: string;
+    water_level_m: number;
+  }>;
+  hourly_trend?: string;
+  forecasted_water_level_m?: number | null;
+  forecasted_at?: string | null;
+  station_alert_status?: string;
+  active_national_warnings_count?: number;
+  active_national_warnings?: Array<{
+    station_code: string;
+    status: string;
+    trend: string;
+    water_level_m: number;
+  }>;
+  sachet_cap_alerts_count?: number;
+  source_portal?: string;
+  sachet_cap_feed?: string;
+}
+
 export interface RiverFloodTelemetry {
   is_in_india: boolean;
   city: string;
@@ -253,6 +279,7 @@ export interface RiverFloodTelemetry {
   river_name: string;
   basin: string;
   cwc_station: string;
+  cwc_station_code?: string;
   upstream_control: string;
   current_water_level_m: number;
   normal_level_m: number;
@@ -274,6 +301,7 @@ export interface RiverFloodTelemetry {
   flood_probability_7d_pct: number;
   prediction_summary: string;
   seismic_zone: string;
+  floodwatch_india?: FloodWatchIndiaLiveInfo;
   authorities: {
     flood: string;
     earthquake: string;

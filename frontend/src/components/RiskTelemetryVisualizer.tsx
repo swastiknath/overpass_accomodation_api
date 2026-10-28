@@ -235,7 +235,7 @@ export default function RiskTelemetryVisualizer({ report }: RiskTelemetryVisuali
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-white">{riverTelemetry.river_name}</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-800/60">
-                  CWC Level: {riverTelemetry.current_water_level_m} m / DL {riverTelemetry.danger_level_m} m
+                  FloodWatch India ({riverTelemetry.cwc_station_code || "CWC"}): {riverTelemetry.current_water_level_m} m / DL {riverTelemetry.danger_level_m} m
                 </span>
                 <span className="text-[10px] font-mono text-emerald-300">
                   {riverTelemetry.current_discharge_m3s} m³/s ({riverTelemetry.current_discharge_cusecs.toLocaleString()} cusecs)
@@ -268,10 +268,22 @@ export default function RiskTelemetryVisualizer({ report }: RiskTelemetryVisuali
           <div className="p-4 rounded-xl bg-zinc-950/90 border border-white/[0.08] space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
               <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 block">
-                  Central Water Commission (CWC) Hydrological Observation & Flood Prediction
-                </span>
-                <h4 className="text-sm font-bold text-white">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">
+                    Central Water Commission (CWC) FloodWatch India • ffs.india-water.gov.in
+                  </span>
+                  {riverTelemetry.cwc_station_code && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
+                      Station Code: {riverTelemetry.cwc_station_code}
+                    </span>
+                  )}
+                  {riverTelemetry.floodwatch_india?.live_cwc_telemetry && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/60">
+                      Live Gauge Feed{riverTelemetry.floodwatch_india.last_observed_at ? ` (${riverTelemetry.floodwatch_india.last_observed_at.replace("T", " ")})` : ""}
+                    </span>
+                  )}
+                </div>
+                <h4 className="text-sm font-bold text-white mt-0.5">
                   {riverTelemetry.river_name} — {riverTelemetry.cwc_station}
                 </h4>
                 <p className="text-[11px] text-zinc-400">
@@ -290,6 +302,38 @@ export default function RiskTelemetryVisualizer({ report }: RiskTelemetryVisuali
                 {riverTelemetry.current_stage_label}
               </span>
             </div>
+
+            {/* Live Hourly CWC FloodWatch India Gauge Readings (when available) */}
+            {riverTelemetry.floodwatch_india?.hourly_readings &&
+              riverTelemetry.floodwatch_india.hourly_readings.length > 0 && (
+                <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06] space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
+                    <span className="text-cyan-300 font-semibold uppercase">
+                      Live FloodWatch India Hourly Gauge Readings (HHS Telemetry)
+                    </span>
+                    {riverTelemetry.floodwatch_india.active_national_warnings_count !== undefined && (
+                      <span>
+                        All-India Active CWC Warning Stations: {riverTelemetry.floodwatch_india.active_national_warnings_count}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                    {riverTelemetry.floodwatch_india.hourly_readings.slice(0, 6).map((hr, idx) => (
+                      <div
+                        key={idx}
+                        className="px-2 py-1 rounded bg-black/50 border border-white/[0.05] text-center"
+                      >
+                        <span className="text-[9px] font-mono text-zinc-400 block">
+                          {hr.timestamp.slice(11, 16) || hr.timestamp.slice(5, 10)}
+                        </span>
+                        <span className="text-xs font-bold font-mono text-cyan-200">
+                          {hr.water_level_m} m
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {/* 4 Hydrological Gauge KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
