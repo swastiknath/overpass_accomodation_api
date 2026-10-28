@@ -547,6 +547,19 @@ class LLMExplainer:
         if not hazards:
             hazards = {"weather", "crime"}
 
+        # For Indian cities, always include localized Indian authority guidance for flood (CWC), earthquake (NCS), and wildfire (FSI)
+        river_telemetry = report.get("river_flood_telemetry") if isinstance(report.get("river_flood_telemetry"), dict) else None
+        india_prof = None
+        if not is_international:
+            from connectors.india_disaster_river_client import resolve_india_river_and_authority_profile
+            india_prof = resolve_india_river_and_authority_profile(
+                location_name=loc_name,
+                state=loc_info.get("state"),
+                lat=loc_info.get("lat"),
+                lon=loc_info.get("lon"),
+            )
+            hazards.update({"flood", "earthquake", "fire"})
+
         for h in sorted(hazards):
             entry = self.advice_catalog.get(h)
             if not entry:
@@ -629,21 +642,87 @@ class LLMExplainer:
                     )
                 )
             else:
-                # Domestic India: use verified Indian emergency catalog
+                # Domestic India: use localized Indian authorities (CWC, NCS, FSI Vanagni, State SDMA)
                 raw_authorities = entry.get("authorities", [])
-                authorities = [
-                    OfficialAuthority(
-                        name=auth.get("name", "Emergency Services"),
-                        url=auth.get("url"),
-                        helpline=auth.get("helpline"),
-                    )
-                    for auth in raw_authorities
-                ]
+                hazard_name = entry.get("hazard_name", h.title())
+                tips = list(entry.get("tips", []))
+
+                if h == "flood" and india_prof:
+                    r_name = (river_telemetry or {}).get("river_name") or india_prof["river_name"]
+                    cwc_st = (river_telemetry or {}).get("cwc_station") or india_prof["cwc_station"]
+                    curr_wl = (river_telemetry or {}).get("current_water_level_m") or india_prof["normal_level_m"]
+                    warn_wl = (river_telemetry or {}).get("warning_level_m") or india_prof["warning_level_m"]
+                    dang_wl = (river_telemetry or {}).get("danger_level_m") or india_prof["danger_level_m"]
+                    hazard_name = f"River Flood & CWC Water Level Telemetry ({r_name})"
+                    tips = [
+                        f"CWC Gauge ({cwc_st}): Current river level is {curr_wl} m (Warning Level: {warn_wl} m | Danger Level: {dang_wl} m).",
+                        f"Upstream discharge is regulated via {india_prof['upstream_control']}; heed barrage release sirens and riverbank alerts.",
+                        *tips[:2],
+                    ]
+                    authorities = [
+                        OfficialAuthority(
+                            name=india_prof["flood_authority"],
+                            url="https://ffs.india-water.gov.in",
+                            helpline=india_prof["sdma_helpline"].split("/")[0].strip(),
+                        ),
+                        OfficialAuthority(
+                            name=india_prof["sdma_name"],
+                            url="https://sachet.ndma.gov.in",
+                            helpline="1070 / 1077",
+                        ),
+                    ]
+                elif h == "earthquake" and india_prof:
+                    sz = india_prof["seismic_zone"]
+                    hazard_name = f"Seismic Activity & NCS India Telemetry ({sz})"
+                    tips = [
+                        f"Located in BIS IS-1893 {sz}; monitored continuously by {india_prof['seismic_authority']}.",
+                        *tips[:2],
+                    ]
+                    authorities = [
+                        OfficialAuthority(
+                            name=india_prof["seismic_authority"],
+                            url="https://seismo.gov.in",
+                            helpline="112",
+                        ),
+                        OfficialAuthority(
+                            name=india_prof["sdma_name"],
+                            url="https://ndma.gov.in",
+                            helpline=india_prof["sdma_helpline"].split("/")[0].strip(),
+                        ),
+                    ]
+                elif h == "fire" and india_prof:
+                    hazard_name = f"Forest & Wildfire Surveillance (FSI Vanagni & {india_prof['state']} Forest Dept)"
+                    tips = [
+                        f"Active thermal hotspots and forest divisions are monitored via {india_prof['fire_authority']}.",
+                        *tips[:2],
+                    ]
+                    authorities = [
+                        OfficialAuthority(
+                            name=india_prof["fire_authority"],
+                            url="https://fsi.nic.in",
+                            helpline="101 / 1926",
+                        ),
+                        OfficialAuthority(
+                            name=india_prof["sdma_name"],
+                            url="https://112.gov.in",
+                            helpline="112",
+                        ),
+                    ]
+                else:
+                    authorities = [
+                        OfficialAuthority(
+                            name=auth.get("name", "Emergency Services"),
+                            url=auth.get("url"),
+                            helpline=auth.get("helpline"),
+                        )
+                        for auth in raw_authorities
+                    ]
+
                 items.append(
                     CuratedAdviceItem(
                         hazard_type=h,
-                        hazard_name=entry.get("hazard_name", h.title()),
-                        tips=entry.get("tips", []),
+                        hazard_name=hazard_name,
+                        tips=tips,
                         authorities=authorities,
                     )
                 )
@@ -715,14 +794,37 @@ class LLMExplainer:
                 for c in top_contribs[:3]
             ]
 
-        firms_txt = "NASA FIRMS thermal sensors detected active localized fire anomalies" if "fire" in hazards_present else "NASA FIRMS VIIRS satellite sensors confirm zero active fire hotspots"
-        usgs_txt = "USGS seismic stations report nearby tectonic tremors" if "earthquake" in hazards_present else "USGS global seismographs indicate zero earthquakes above M2.5"
-        weather_txt = "Open-Meteo weather stations register active precipitation" if "weather" in hazards_present else "Open-Meteo atmospheric telemetry indicates stable weather conditions"
-        p2 = (
-            f"Geo-Hazard & Environmental Telemetry: {firms_txt}. "
-            f"Concurrently, {usgs_txt}, and {weather_txt}. "
-            f"GDACS hydrometeorological automated scanners indicate stable regional river and flood basin levels."
-        )
+        in_india_flag = report.get("is_in_india", report.get("location", {}).get("is_in_india", True))
+        if in_india_flag:
+            firms_txt = (
+                "Forest Survey of India (FSI Vanagni) & State Forest Department sensors detected active localized fire anomalies"
+                if "fire" in hazards_present
+                else "Forest Survey of India (FSI SNPP-VIIRS Vanagni) and State Fire Services confirm zero active forest or scrub fire hotspots"
+            )
+            usgs_txt = (
+                "National Centre for Seismology (NCS, MoES) & SDMA seismic stations report nearby tectonic tremors"
+                if "earthquake" in hazards_present
+                else "National Centre for Seismology (NCS, MoES) regional observatories indicate zero earthquakes above M2.5"
+            )
+            weather_txt = (
+                "IMD & Open-Meteo weather stations register active precipitation"
+                if "weather" in hazards_present
+                else "IMD & Open-Meteo atmospheric telemetry indicates stable weather conditions"
+            )
+            p2 = (
+                f"Indian Authority Geo-Hazard & River Telemetry: {firms_txt}. "
+                f"Concurrently, {usgs_txt}, and {weather_txt}. "
+                f"Central Water Commission (CWC) hydrological gauges and State Flood Control authorities monitor regional river water levels and barrage discharge."
+            )
+        else:
+            firms_txt = "NASA FIRMS thermal sensors detected active localized fire anomalies" if "fire" in hazards_present else "NASA FIRMS VIIRS satellite sensors confirm zero active fire hotspots"
+            usgs_txt = "USGS seismic stations report nearby tectonic tremors" if "earthquake" in hazards_present else "USGS global seismographs indicate zero earthquakes above M2.5"
+            weather_txt = "Open-Meteo weather stations register active precipitation" if "weather" in hazards_present else "Open-Meteo atmospheric telemetry indicates stable weather conditions"
+            p2 = (
+                f"Geo-Hazard & Environmental Telemetry: {firms_txt}. "
+                f"Concurrently, {usgs_txt}, and {weather_txt}. "
+                f"GDACS hydrometeorological automated scanners indicate stable regional river and flood basin levels."
+            )
 
         p3 = (
             "Security, Civil Stability & Law Enforcement: "

@@ -13,8 +13,16 @@ echo.
 
 cd /d "%~dp0"
 
+:: Ensure Windows system directories and standard tools (ping, where, powershell) are always on PATH
+if defined SystemRoot (
+    set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0\;!PATH!"
+) else (
+    set "PATH=C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;!PATH!"
+)
+
 :: Augment PATH with common Windows install locations for Python & Node.js
 if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;!PATH!"
+if exist "%ProgramFiles(x86)%\nodejs" set "PATH=%ProgramFiles(x86)%\nodejs;!PATH!"
 if exist "%LOCALAPPDATA%\Programs\nodejs" set "PATH=%LOCALAPPDATA%\Programs\nodejs;!PATH!"
 if exist "%APPDATA%\npm" set "PATH=%APPDATA%\npm;!PATH!"
 for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
@@ -39,8 +47,8 @@ if "!PY_CMD!"=="" (
     echo Attempting automatic installation via winget...
     winget --version >nul 2>&1
     if !errorlevel! equ 0 (
-        winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
-        timeout /t 5 >nul
+        winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
+        ping 127.0.0.1 -n 5 >nul 2>&1
         for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
             set "PATH=%%~fD;%%~fD\Scripts;!PATH!"
         )
@@ -49,8 +57,8 @@ if "!PY_CMD!"=="" (
         echo [!] winget not available. Downloading official Python 3.12 installer...
         powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe' -OutFile '%TEMP%\python_installer.exe'"
         if exist "%TEMP%\python_installer.exe" (
-            echo Installing Python silently...
-            start /wait "" "%TEMP%\python_installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+            echo Running Python installer...
+            start /wait "" "%TEMP%\python_installer.exe" InstallAllUsers=0 PrependPath=1 Include_test=0
             del "%TEMP%\python_installer.exe" 2>nul
             for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
                 set "PATH=%%~fD;%%~fD\Scripts;!PATH!"
@@ -85,30 +93,29 @@ where node.exe >nul 2>&1
 if !errorlevel! neq 0 (
     echo.
     echo [!] Node.js and npm were not found on your system PATH.
-    echo Attempting automatic installation via winget...
-    winget --version >nul 2>&1
-    if !errorlevel! equ 0 (
-        winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
-        timeout /t 5 >nul
+    echo Downloading official Node.js installer...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi' -OutFile '%TEMP%\node_installer.msi'"
+    if exist "%TEMP%\node_installer.msi" (
+        echo Launching Node.js installer with administrative prompt (UAC)...
+        echo Please click "Yes" / "Next" on the installer window to complete setup.
+        start /wait msiexec /i "%TEMP%\node_installer.msi"
+        del "%TEMP%\node_installer.msi" 2>nul
         if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;!PATH!"
-    ) else (
-        echo [!] Downloading official Node.js LTS installer...
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi' -OutFile '%TEMP%\node_installer.msi'"
-        if exist "%TEMP%\node_installer.msi" (
-            echo Installing Node.js silently...
-            msiexec /i "%TEMP%\node_installer.msi" /quiet /qn
-            del "%TEMP%\node_installer.msi" 2>nul
-            if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;!PATH!"
-        )
+        if exist "%ProgramFiles(x86)%\nodejs" set "PATH=%ProgramFiles(x86)%\nodejs;!PATH!"
     )
 )
 
 where node.exe >nul 2>&1
 if !errorlevel! neq 0 (
     echo.
-    echo [ERROR] Node.js is required for the frontend portal but was not found.
-    echo Please install Node.js LTS from: https://nodejs.org/
-    echo After installing, restart your terminal and re-run this script.
+    echo [ERROR] Node.js is required for the frontend portal.
+    echo The silent winget/msi installer failed (code 1603 requires Administrator permissions).
+    echo.
+    echo Please install Node.js manually:
+    echo  1. Go to: https://nodejs.org/
+    echo  2. Download and run the recommended LTS installer (.msi)
+    echo  3. Click "Next" through the setup and finish
+    echo  4. Restart VS Code or your terminal window and re-run run.bat
     echo.
     pause
     exit /b 1

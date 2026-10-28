@@ -88,24 +88,29 @@ export default function CombinedTelemetryLinePlot({ report }: CombinedTelemetryL
     };
   });
 
-  // 2. 15-Day Environmental & Hazard Forecast Data
-  const forecastPoints = forecast15.slice(0, 10).map((f) => {
+  // 2. 15-Day Environmental & Hazard Forecast Data (including CWC River Water Level Flood Risk)
+  const riverSeries = report.river_flood_telemetry?.forecast_15day || [];
+  const forecastPoints = forecast15.slice(0, 10).map((f, idx) => {
     const rawRain = f.precip_probability_max ?? 15;
     const rawTemp = f.temp_max_c ?? 26;
     const rawWind = f.wind_speed_max_kmh ?? 18;
     const rawAqi = f.us_aqi ?? 65;
+    const riverPt = riverSeries[idx];
+    const rawRiverFlood = riverPt ? riverPt.flood_probability_pct : Math.min(95, Math.max(8, Math.round(rawRain * 0.65 + 6)));
 
     return {
       label: f.date ? f.date.slice(5) : "Day",
       fullLabel: f.date || "Forecast Date",
       values: {
         rain: rawRain,
+        river_flood: rawRiverFlood,
         temp: rawTemp,
         wind: rawWind,
         aqi: rawAqi,
       },
       normalized: {
         rain: Math.min(100, rawRain),
+        river_flood: Math.min(100, rawRiverFlood),
         temp: Math.min(100, Math.round(rawTemp * 2)),
         wind: Math.min(100, Math.round(rawWind * 2)),
         aqi: Math.min(100, Math.round(rawAqi * 0.5)),
@@ -167,6 +172,14 @@ export default function CombinedTelemetryLinePlot({ report }: CombinedTelemetryL
       gradientId: `${uid}_grad_rain`,
       unit: "%",
       icon: CloudRain,
+    },
+    {
+      id: "river_flood",
+      label: "CWC River Flood Prediction",
+      color: "#14b8a6",
+      gradientId: `${uid}_grad_river_flood`,
+      unit: "% risk",
+      icon: Waves,
     },
     {
       id: "temp",

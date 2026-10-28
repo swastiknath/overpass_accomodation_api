@@ -37,6 +37,10 @@ source_confidence_defaults:
   gdacs: 0.90              # expert-assigned prior, to be calibrated
   usgs: 0.95               # expert-assigned prior, to be calibrated
   firms: 0.80              # expert-assigned prior, to be calibrated
+  ncs_india: 0.95          # National Centre for Seismology (NCS, MoES India)
+  fsi_vanagni: 0.88        # Forest Survey of India (FSI SNPP-VIIRS Vanagni)
+  cwc_ffs: 0.92            # Central Water Commission (CWC) River Flood Forecasting
+  ndma_sachet: 0.92        # NDMA SACHET Common Alerting Protocol
   acled: 0.90              # expert-assigned prior, to be calibrated
   crime_ncrb: 0.75         # expert-assigned prior, to be calibrated
   open_meteo: 0.85         # expert-assigned prior, to be calibrated

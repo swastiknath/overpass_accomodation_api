@@ -24,6 +24,7 @@ from gis.harmonize import snap_to_admin_boundary, snap_to_h3
 from connectors.acled_client import ACLEDClient
 from connectors.crime_client import CrimeClient
 from connectors.disaster_alerts_client import DisasterAlertsClient
+from connectors.india_disaster_river_client import IndiaDisasterAndRiverClient
 from connectors.news_client import NewsClient
 from connectors.weather_client import WeatherClient
 from connectors.travel_advisory_client import TravelAdvisoryClient
@@ -56,6 +57,7 @@ class SignalOrchestrator:
 
         # Clients
         self.disaster_client = DisasterAlertsClient(settings=self.settings)
+        self.india_disaster_client = IndiaDisasterAndRiverClient(settings=self.settings)
         self.acled_client = ACLEDClient(settings=self.settings)
         self.weather_client = WeatherClient(settings=self.settings)
         self.crime_client = CrimeClient(settings=self.settings)
@@ -121,6 +123,7 @@ class SignalOrchestrator:
 
         # ── 1. Concurrent Fetching ──────────────────────────────────────────
         matched_advisory: dict[str, Any] | None = None
+        river_flood_payload: dict[str, Any] | None = None
 
         if demo_mode:
             logger.info("DEMO_MODE=True: Loading fixture responses for all connectors.")
@@ -149,6 +152,21 @@ class SignalOrchestrator:
                 is_in_india=is_in_india,
                 location_name=location_name,
             ).get("crime_statistics")
+            if is_in_india:
+                try:
+                    river_flood_payload, india_demo_recs = await asyncio.wait_for(
+                        self.india_disaster_client.fetch_india_hazards_and_river_async(
+                            lat=lat,
+                            lon=lon,
+                            location_name=location_name,
+                            district_id=district_id,
+                            state=state_name,
+                            existing_records=all_records,
+                        ),
+                        timeout=6.0,
+                    )
+                except Exception as ind_exc:
+                    logger.debug(f"Demo India river telemetry fallback: {ind_exc}")
         else:
             # Live concurrent queries with circuit breakers / per-connector timeout
             disaster_task = asyncio.wait_for(self.disaster_client.get_all_active_async(bbox), timeout=12.0)
@@ -296,6 +314,50 @@ class SignalOrchestrator:
             from hotels.crawler import is_pakistan_location, is_india_location
             is_pk = is_pakistan_location(location_name or "", lat, lon) or any(k in (location_name or "").lower() for k in ("pakistan", "sindh", "lahore", "karachi", "islamabad", "peshawar", "quetta"))
             in_india = is_india_location(location_name or "", lat, lon) and not is_pk
+
+            # For Indian cities: fetch local Indian authority disaster telemetry (NCS Earthquake, FSI Wildfire, CWC River Flood)
+            # and live Indian river water level + 15-day flood predictions
+            if in_india:
+                try:
+                    river_flood_payload, india_records = await asyncio.wait_for(
+                        self.india_disaster_client.fetch_india_hazards_and_river_async(
+                            lat=lat,
+                            lon=lon,
+                            location_name=location_name,
+                            district_id=district_id,
+                            state=state_name,
+                            weather_data=weather_res if isinstance(weather_res, dict) else None,
+                            existing_records=all_records,
+                        ),
+                        timeout=7.5,
+                    )
+                    if river_flood_payload:
+                        auth_meta = river_flood_payload.get("authorities", {})
+                        sources_meta["cwc_ffs"] = {
+                            "status": "active",
+                            "source": auth_meta.get("flood", "Central Water Commission (CWC) River Flood Telemetry"),
+                            "last_fetched": now_utc.isoformat(),
+                        }
+                        sources_meta["ncs_india"] = {
+                            "status": "active",
+                            "source": auth_meta.get("earthquake", "National Centre for Seismology (NCS, MoES)"),
+                            "last_fetched": now_utc.isoformat(),
+                        }
+                        sources_meta["fsi_vanagni"] = {
+                            "status": "active",
+                            "source": auth_meta.get("wildfire", "Forest Survey of India (FSI Vanagni)"),
+                            "last_fetched": now_utc.isoformat(),
+                        }
+                        # Override generic global source labels with Indian local authorities
+                        sources_meta["usgs_seismic"] = sources_meta["ncs_india"]
+                        sources_meta["nasa_firms"] = sources_meta["fsi_vanagni"]
+                        sources_meta["gdacs_alerts"] = sources_meta["cwc_ffs"]
+
+                    for irec in india_records:
+                        all_records.append(irec)
+                        coverage[irec.hazard_type] = "contributing"
+                except Exception as ind_err:
+                    logger.warning(f"Indian authority disaster & river telemetry fallback: {ind_err}")
 
             clean_district = (district_id or (location_name.split(",")[0] if location_name else "Region")).strip()
             # Ensure English display
@@ -522,6 +584,7 @@ class SignalOrchestrator:
             ),
             "weather_and_air_quality": weather_res if isinstance(weather_res, dict) else {},
             "travel_advisories": matched_advisory,
+            "river_flood_telemetry": river_flood_payload,
             "historical_stats": compute_historical_stats(
                 location_name=location_name,
                 lat=lat,
@@ -530,6 +593,7 @@ class SignalOrchestrator:
                 is_in_india=is_in_india,
                 active_records=all_records,
                 news_articles=news_articles_list,
+                river_flood_telemetry=river_flood_payload,
             ),
             "crime_statistics": crime_stats_payload,
             "disclaimer": DISCLAIMER_TEXT,

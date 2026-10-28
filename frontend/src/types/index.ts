@@ -208,6 +208,7 @@ export interface SearchReport {
   same_area_warning: boolean;
   weather_and_air_quality?: WeatherAndAirQuality;
   travel_advisories?: TravelAdvisoryInfo | null;
+  river_flood_telemetry?: RiverFloodTelemetry | null;
   historical_stats?: HistoricalStats;
   crime_statistics?: CrimeStatistics;
   disclaimer: string;
@@ -216,6 +217,83 @@ export interface SearchReport {
   original_radius_km?: number;
   effective_radius_km?: number;
   radius_expansion_message?: string | null;
+}
+
+export interface RiverForecastPoint {
+  date: string;
+  water_level_m: number;
+  normal_level_m: number;
+  warning_level_m: number;
+  danger_level_m: number;
+  hfl_m: number;
+  discharge_m3s: number;
+  discharge_max_m3s?: number;
+  discharge_cusecs: number;
+  rainfall_mm: number;
+  flood_probability_pct: number;
+  stage: "normal" | "watch" | "warning" | "danger";
+  stage_label: string;
+}
+
+export interface IndiaAuthorityBulletin {
+  id: string;
+  hazard_type: "flood" | "earthquake" | "fire" | string;
+  title: string;
+  authority: string;
+  publisher?: string;
+  date: string;
+  severity: string;
+  url?: string;
+}
+
+export interface RiverFloodTelemetry {
+  is_in_india: boolean;
+  city: string;
+  state: string;
+  river_name: string;
+  basin: string;
+  cwc_station: string;
+  upstream_control: string;
+  current_water_level_m: number;
+  normal_level_m: number;
+  warning_level_m: number;
+  danger_level_m: number;
+  hfl_m: number;
+  hfl_year?: number;
+  margin_to_warning_m: number;
+  margin_to_danger_m: number;
+  current_discharge_m3s: number;
+  current_discharge_cusecs: number;
+  current_stage: "normal" | "watch" | "warning" | "danger" | string;
+  current_stage_label: string;
+  inflow_trend: "Rising" | "Receding" | "Steady" | string;
+  peak_7d_water_level_m: number;
+  peak_7d_date: string;
+  peak_7d_discharge_m3s: number;
+  peak_7d_stage_label: string;
+  flood_probability_7d_pct: number;
+  prediction_summary: string;
+  seismic_zone: string;
+  authorities: {
+    flood: string;
+    earthquake: string;
+    wildfire: string;
+    sdma: string;
+    helpline: string;
+  };
+  forecast_15day: RiverForecastPoint[];
+  ncs_recent_earthquakes?: Array<{
+    id: string;
+    magnitude: number;
+    depth_km: number;
+    place: string;
+    distance_km: number;
+    event_time: string;
+    authority: string;
+    url?: string;
+  }>;
+  indian_authority_bulletins?: IndiaAuthorityBulletin[];
+  data_sources?: string[];
 }
 
 export interface CrimeYearData {

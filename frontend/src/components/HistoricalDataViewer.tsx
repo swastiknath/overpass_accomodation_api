@@ -510,7 +510,11 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
 
             {/* Explanatory Footer */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-zinc-400 gap-2 pt-1">
-              <span>Primary source verification: ACLED Armed Conflict Event Data & USGS Earthquake Hazards Program.</span>
+              <span>
+                {report.is_in_india !== false
+                  ? "Primary source verification: National Centre for Seismology (NCS, MoES), Forest Survey of India (FSI Vanagni), Central Water Commission (CWC) River Telemetry & ACLED."
+                  : "Primary source verification: ACLED Armed Conflict Event Data & USGS Earthquake Hazards Program."}
+              </span>
               <span className="text-[11px] font-mono text-zinc-500">Hover bar for incident & fatality breakdown</span>
             </div>
           </div>
@@ -635,7 +639,9 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
           <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-zinc-400 flex items-start gap-2.5">
             <Info className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
             <span>
-              Telemetry synthesized across Global Disaster Alert and Coordination System (GDACS), USGS National Earthquake Information Center, and Open-Meteo historical re-analysis datasets.
+              {report.is_in_india !== false
+                ? "Indian city disaster telemetry synthesized from Local & National Indian Authorities: Central Water Commission (CWC) River Water Level & Flood Forecasting Network (ffs.india-water.gov.in), National Centre for Seismology (NCS, Ministry of Earth Sciences) & State SDMA for earthquakes, and Forest Survey of India (FSI SNPP-VIIRS Vanagni) & State Forest Departments for wildfires."
+                : "Telemetry synthesized across Global Disaster Alert and Coordination System (GDACS), USGS National Earthquake Information Center, and Open-Meteo historical re-analysis datasets."}
             </span>
           </div>
         </div>
