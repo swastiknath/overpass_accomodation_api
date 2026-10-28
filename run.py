@@ -301,6 +301,69 @@ def setup_env_files() -> None:
         )
         print("[OK] Created frontend/.env.local configuration")
 
+    # Ensure frontend/src/lib/api.ts exists (in case an earlier gitignore excluded lib/)
+    lib_api_ts = FRONTEND_DIR / "src" / "lib" / "api.ts"
+    if not lib_api_ts.exists():
+        lib_api_ts.parent.mkdir(parents=True, exist_ok=True)
+        lib_api_ts.write_text(
+            'import { GeocodeCandidate, SearchReport, ExplanationResponse } from "@/types";\n\n'
+            'const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";\n\n'
+            "export async function fetchGeocode(query: string): Promise<GeocodeCandidate[]> {\n"
+            "  const url = `${API_BASE_URL}/v1/geocode?q=${encodeURIComponent(query)}`;\n"
+            "  const resp = await fetch(url);\n"
+            "  if (!resp.ok) {\n"
+            "    throw new Error(`Geocoding failed with status ${resp.status}`);\n"
+            "  }\n"
+            "  return resp.json();\n"
+            "}\n\n"
+            "export async function fetchSearchReport(params: {\n"
+            "  q?: string;\n"
+            "  lat?: number;\n"
+            "  lon?: number;\n"
+            "  radius_km?: number;\n"
+            "  alpha?: number;\n"
+            "  max_hotels?: number;\n"
+            "}): Promise<SearchReport> {\n"
+            "  const searchParams = new URLSearchParams();\n"
+            '  if (params.q) searchParams.set("q", params.q);\n'
+            "  if (params.lat !== undefined && params.lon !== undefined) {\n"
+            '    searchParams.set("lat", params.lat.toString());\n'
+            '    searchParams.set("lon", params.lon.toString());\n'
+            "  }\n"
+            '  if (params.radius_km !== undefined) searchParams.set("radius_km", params.radius_km.toString());\n'
+            '  if (params.alpha !== undefined) searchParams.set("alpha", params.alpha.toString());\n'
+            '  if (params.max_hotels !== undefined) searchParams.set("max_hotels", params.max_hotels.toString());\n\n'
+            "  const url = `${API_BASE_URL}/v1/search-report?${searchParams.toString()}`;\n"
+            "  const resp = await fetch(url);\n"
+            "  if (!resp.ok) {\n"
+            "    const errorData = await resp.json().catch(() => null);\n"
+            '    if (resp.status === 400 && errorData?.error === "out_of_coverage") {\n'
+            '      throw new Error(errorData.message || "Location is outside India territory.");\n'
+            "    }\n"
+            "    throw new Error(errorData?.detail || `Search report failed with status ${resp.status}`);\n"
+            "  }\n"
+            "  return resp.json();\n"
+            "}\n\n"
+            "export async function fetchExplanation(reportId: string): Promise<ExplanationResponse> {\n"
+            "  const url = `${API_BASE_URL}/v1/explanation`;\n"
+            "  const resp = await fetch(url, {\n"
+            '    method: "POST",\n'
+            '    headers: { "Content-Type": "application/json" },\n'
+            "    body: jsonStringifySafe({ report_id: reportId }),\n"
+            "  });\n"
+            "  if (!resp.ok) {\n"
+            "    const err = await resp.json().catch(() => null);\n"
+            "    throw new Error(err?.detail || `Explanation request failed with status ${resp.status}`);\n"
+            "  }\n"
+            "  return resp.json();\n"
+            "}\n\n"
+            "function jsonStringifySafe(data: any): string {\n"
+            "  return JSON.stringify(data);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        print("[OK] Created missing frontend/src/lib/api.ts")
+
 
 def _is_frontend_node_modules_valid_for_os() -> bool:
     """Check if frontend/node_modules exists and has native binaries for the current OS."""
