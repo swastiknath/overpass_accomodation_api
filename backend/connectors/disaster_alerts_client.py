@@ -164,16 +164,14 @@ class DisasterAlertsClient(BaseConnector):
                     lon_min, lat_min, lon_max, lat_max = bbox
                     inside = lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
                     if not inside and str(event_type_raw).strip() == "TC":
-                        # Tropical cyclones affect a wide area: keep the alert when the
-                        # search area centre lies inside the GDACS impact bounding box.
+                        # Tropical cyclones: only impact locations within 350 km of the eye
                         c_lat = (lat_min + lat_max) / 2.0
                         c_lon = (lon_min + lon_max) / 2.0
-                        try:
-                            gb = [float(v) for v in str(entry.get("gdacs_bbox", "")).split()]
-                            if len(gb) == 4:
-                                inside = gb[0] <= c_lon <= gb[1] and gb[2] <= c_lat <= gb[3]
-                        except ValueError:
-                            inside = False
+                        dist_to_eye_km = math.hypot(
+                            (lon - c_lon) * 111.32 * max(0.01, math.cos(math.radians(c_lat))),
+                            (lat - c_lat) * 111.32,
+                        )
+                        inside = dist_to_eye_km <= 350.0
                     if not inside:
                         continue
 

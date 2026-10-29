@@ -62,45 +62,54 @@ def normalize_flood_susceptibility(raw: Any, config: FusionConfig) -> float:
 
 @register_normalizer("flood")
 def normalize_flood_alert(raw: Any, config: FusionConfig) -> float:
-    """Flood alert (GDACS/FEWS): ordinal anchors (green 0.2, orange 0.55, red 0.9)."""
+    """Flood alert (GDACS/FEWS/CWC): ordinal anchors (normal 0.0, watch 0.25, orange 0.55, red 0.9)."""
     anchors = config.normalization.get("flood_gdacs_anchors", {"green": 0.2, "orange": 0.55, "red": 0.9})
     if isinstance(raw, str):
         cleaned = raw.strip().lower()
-        if "red" in cleaned:
+        if cleaned in ("normal", "none", "safe", "green"):
+            return 0.0
+        if "red" in cleaned or "danger" in cleaned:
             return float(anchors.get("red", 0.9))
-        if "orange" in cleaned or "amber" in cleaned:
+        if "orange" in cleaned or "amber" in cleaned or "warning" in cleaned:
             return float(anchors.get("orange", 0.55))
-        if "green" in cleaned:
-            return float(anchors.get("green", 0.2))
+        if "watch" in cleaned or "yellow" in cleaned:
+            return 0.25
+        return 0.0
     elif isinstance(raw, (int, float)):
-        # If passed as numeric severity
+        if raw <= 0.05:
+            return 0.0
         if raw >= 0.8:
             return float(anchors.get("red", 0.9))
         if raw >= 0.5:
             return float(anchors.get("orange", 0.55))
         return float(anchors.get("green", 0.2))
-    return float(anchors.get("green", 0.2))
+    return 0.0
 
 
 @register_normalizer("cyclone")
 def normalize_cyclone_alert(raw: Any, config: FusionConfig) -> float:
-    """Cyclone alert (GDACS/FEWS): ordinal anchors (green 0.2, orange 0.55, red 0.9)."""
+    """Cyclone alert (GDACS/IMD): ordinal anchors (normal 0.0, watch 0.25, orange 0.55, red 0.9)."""
     anchors = config.normalization.get("cyclone_gdacs_anchors", {"green": 0.2, "orange": 0.55, "red": 0.9})
     if isinstance(raw, str):
         cleaned = raw.strip().lower()
-        if "red" in cleaned:
+        if cleaned in ("normal", "none", "safe", "green", "no_cyclone"):
+            return 0.0
+        if "red" in cleaned or "severe" in cleaned:
             return float(anchors.get("red", 0.9))
-        if "orange" in cleaned or "amber" in cleaned:
+        if "orange" in cleaned or "amber" in cleaned or "warning" in cleaned:
             return float(anchors.get("orange", 0.55))
-        if "green" in cleaned:
-            return float(anchors.get("green", 0.2))
+        if "watch" in cleaned or "yellow" in cleaned:
+            return 0.25
+        return 0.0
     elif isinstance(raw, (int, float)):
+        if raw <= 0.05:
+            return 0.0
         if raw >= 0.8:
             return float(anchors.get("red", 0.9))
         if raw >= 0.5:
             return float(anchors.get("orange", 0.55))
         return float(anchors.get("green", 0.2))
-    return float(anchors.get("green", 0.2))
+    return 0.0
 
 
 @register_normalizer("earthquake")

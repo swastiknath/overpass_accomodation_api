@@ -176,8 +176,9 @@ class CycloneTelemetryClient:
             item.pop("bbox", None)
             item["distance_km"] = dist_km
             item["country_match"] = country_match
-            # Impact zone is strictly geographic: inside GDACS impact bbox or within 900 km of the eye
-            item["in_impact_zone"] = bool(in_bbox or dist_km <= 900.0)
+            # Impact zone is strictly physical: within cyclonic gale wind radius (<=350 km, or <=500 km for Cat 4/5 Super Cyclones)
+            max_impact_dist = 500.0 if tc.get("max_wind_kmh", 0) >= 200 else 350.0
+            item["in_impact_zone"] = bool(dist_km <= max_impact_dist)
             enriched.append(item)
 
         enriched.sort(key=lambda x: (not x["in_impact_zone"], x["distance_km"]))
@@ -319,8 +320,9 @@ class CycloneTelemetryClient:
                             })
             except Exception as exc:
                 logger.debug(f"SACHET cyclone CAP check skipped: {exc}")
-            out.sort(key=lambda x: (not x["is_local"]))
-            return out[:5]
+            # Strictly return only local bulletins matching the target state or city
+            local_only = [x for x in out if x["is_local"]]
+            return local_only[:5]
 
         async def _get_rss_cyclone_dispatches() -> list[dict[str, Any]]:
             q_str = (
@@ -343,6 +345,11 @@ class CycloneTelemetryClient:
                             if not raw_title or len(raw_title) < 15:
                                 continue
                             t_low = raw_title.lower()
+                            city_low = city.lower()
+                            state_low = (state or "").lower()
+                            # Strictly require the article to mention this specific city or state
+                            if city_low not in t_low and (not state_low or state_low not in t_low):
+                                continue
                             if not any(
                                 w in t_low
                                 for w in ("cyclone", "cyclonic", "depression", "typhoon", "hurricane", "storm", "imd", "gale", "landfall", "wind")
@@ -469,8 +476,8 @@ class CycloneTelemetryClient:
             tc_prox_bonus = 0.0
             if nearest_tc and nearest_tc.get("in_impact_zone") and idx <= 4:
                 tc_dist = float(nearest_tc.get("distance_km") or 1500.0)
-                if tc_dist <= 1200.0:
-                    tc_prox_bonus = max(0.0, (1200.0 - tc_dist) / 1200.0) * 35.0
+                if tc_dist <= 350.0:
+                    tc_prox_bonus = max(0.0, (350.0 - tc_dist) / 350.0) * 35.0
 
             risk_pct = int(min(99, max(2, round(wind_score + pres_score + rain_score + tc_prox_bonus))))
             forecast_15day.append({
@@ -501,21 +508,20 @@ class CycloneTelemetryClient:
         max_fc_rain = max((x["precipitation_mm"] for x in forecast_15day), default=curr_precip)
 
         has_imminent = bool(
-            (nearest_tc and nearest_tc.get("in_impact_zone") and nearest_tc.get("distance_km", 9999) <= 1000.0)
-            or peak_fc["max_wind_gust_kmh"] >= 55.0
-            or min_fc_p <= 998.0
+            (nearest_tc and nearest_tc.get("in_impact_zone") and nearest_tc.get("distance_km", 9999) <= 350.0)
+            or (peak_fc["max_wind_gust_kmh"] >= 62.0 and min_fc_p <= 998.0)
             or any(b.get("is_local") and b.get("severity") == "High" for b in bulletins)
         )
 
-        if (nearest_tc and nearest_tc.get("distance_km", 9999) <= 500.0 and nearest_tc.get("alert_level") == "Red") or peak_fc["max_wind_gust_kmh"] >= 89.0:
-            threat_level = "Severe"
+        if nearest_tc and nearest_tc.get("in_impact_zone") and nearest_tc.get("distance_km", 9999) <= 350.0 and nearest_tc.get("alert_level") in ("Red", "Orange"):
+            threat_level = "Severe" if nearest_tc.get("alert_level") == "Red" else "Elevated"
             active_alert_status = "ACTIVE CYCLONE WARNING"
-        elif has_imminent or (nearest_tc and nearest_tc.get("in_impact_zone")):
+        elif has_imminent and (nearest_tc and nearest_tc.get("in_impact_zone")):
             threat_level = "Elevated"
             active_alert_status = "IMMINENT CYCLONE / DEPRESSION WATCH"
-        elif peak_fc["max_wind_gust_kmh"] >= 40.0 or bulletins:
+        elif (peak_fc["max_wind_gust_kmh"] >= 62.0 and min_fc_p <= 998.0) or any(b.get("is_local") and b.get("severity") == "High" for b in bulletins):
             threat_level = "Watch"
-            active_alert_status = "SQUALLY WIND / SYNOPTIC WATCH"
+            active_alert_status = "DEPRESSION / SQUALLY GALE WATCH"
         else:
             threat_level = "Low"
             active_alert_status = "NO ACTIVE CYCLONE"
@@ -529,8 +535,8 @@ class CycloneTelemetryClient:
             )
         else:
             headline = (
-                f"15-day atmospheric telemetry for {city_short} projects peak wind gusts of "
-                f"{peak_fc['max_wind_gust_kmh']} km/h (sustained {peak_fc['max_wind_speed_kmh']} km/h) on {peak_fc['date']} "
+                f"No active cyclone threat for {city_short}. 15-day synoptic atmospheric telemetry projects "
+                f"peak wind gusts of {peak_fc['max_wind_gust_kmh']} km/h (sustained {peak_fc['max_wind_speed_kmh']} km/h) on {peak_fc['date']} "
                 f"with minimum sea-level pressure {min_fc_p} hPa ({peak_fc['imd_category']})."
             )
 
@@ -617,7 +623,7 @@ class CycloneTelemetryClient:
 
         # Emit IngestedRecord for fusion scoring if an active or imminent cyclone affects the location
         new_records: list[IngestedRecord] = []
-        if nearest_tc and nearest_tc.get("in_impact_zone") and nearest_tc.get("distance_km", 9999) <= 750.0:
+        if nearest_tc and nearest_tc.get("in_impact_zone") and nearest_tc.get("distance_km", 9999) <= 350.0:
             sev_map = {"Red": 0.9, "Orange": 0.7, "Green": 0.45}
             new_records.append(
                 IngestedRecord(

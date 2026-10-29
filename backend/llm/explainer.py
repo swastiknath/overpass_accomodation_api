@@ -778,11 +778,14 @@ class LLMExplainer:
             ]
         else:
             top_h = top_contribs[0]
-            headline = f"{decision_prefix}{top_h.get('human_label', 'Hazard Signal')} Shapes Safety Score ({score}/100)"
+            top_label = top_h.get("human_label", "Hazard Signal")
+            if re.search(r"[^\x00-\x7F]", top_label):
+                top_label = f"Local {top_h.get('hazard_type', 'Hazard').title()} Activity"
+            headline = f"{decision_prefix}{top_label} Shapes Safety Score ({score}/100)"
             p1 = (
                 f"The deterministic safety evaluation for {location} yields an overall composite safety score of {score}/100, "
                 f"classifying the destination under the '{band}' risk classification. "
-                f"The primary risk driver is {top_h.get('human_label')}, contributing {int(top_h.get('contribution', 0)*100)}% "
+                f"The primary risk driver is {top_label}, contributing {int(top_h.get('contribution', 0)*100)}% "
                 f"of observed hazard weight at a distance of {top_h.get('distance_km', 0)} km."
             )
             key_drivers = [

@@ -1590,10 +1590,10 @@ class IndiaDisasterAndRiverClient:
                 or any(rt in t_low for rt in river_tokens)
             ):
                 matched_cap.append(cap_entry)
-            elif is_cwc:
-                cwc_national_cap.append(cap_entry)
 
-        return (matched_cap + cwc_national_cap)[:6]
+        # Strictly return only alerts matching this specific state, city, or local river.
+        # Unrelated national alerts from other states are never leaked into a city's profile.
+        return matched_cap[:6]
 
     async def _fetch_glofas_live_and_historical_discharge_async(
         self, lat: float, lon: float
@@ -1778,6 +1778,13 @@ class IndiaDisasterAndRiverClient:
                                 pass
 
                         t_low = clean_title.lower()
+                        city_low = city.lower()
+                        state_low = state.lower()
+                        river_low = river_kw.lower()
+                        # Strictly verify that the dispatch mentions the searched city, state, or local river
+                        if city_low not in t_low and state_low not in t_low and river_low not in t_low:
+                            continue
+
                         if hazard_type == "flood" and not any(
                             w in t_low for w in ("flood", "water level", "river", "danger", "cusec", "barrage", "inundat", "rain", "dam", "cwc")
                         ):
@@ -2204,50 +2211,39 @@ class IndiaDisasterAndRiverClient:
         new_records: list[IngestedRecord] = []
 
         if has_river_in_city:
-            recent_flood_bulletins = [
-                b for b in bulletins if b["hazard_type"] == "flood" and b.get("age_days", 99) <= 7
-            ]
-            if (
-                current_pt["stage"] in ("watch", "warning", "danger")
-                or peak_7d_pt["stage"] in ("warning", "danger")
-                or recent_flood_bulletins
-                or cwc_live.get("live_cwc_telemetry")
-            ):
-                sev_str = "Red" if (current_pt["stage"] == "danger" or peak_7d_pt["stage"] == "danger") else (
-                    "Orange" if (current_pt["stage"] == "warning" or peak_7d_pt["stage"] == "warning") else "Green"
+            sev_str = "Red" if (current_pt["stage"] == "danger" or peak_7d_pt["stage"] == "danger") else (
+                "Orange" if (current_pt["stage"] == "warning" or peak_7d_pt["stage"] == "warning") else (
+                    "Watch" if current_pt["stage"] == "watch" else "Normal"
                 )
-                wl_str = f"{current_pt['water_level_m']}m, " if current_pt.get("water_level_m") is not None else ""
-                title_txt = (
-                    recent_flood_bulletins[0]["title"]
-                    if recent_flood_bulletins and current_pt["stage"] == "normal"
-                    else f"CWC & GloFAS River Telemetry: {profile['river_name']} ({wl_str}{current_pt['discharge_m3s']} m³/s — {current_pt['stage_label']})"
+            )
+            wl_str = f"{current_pt['water_level_m']}m, " if current_pt.get("water_level_m") is not None else ""
+            title_txt = f"CWC & GloFAS River Telemetry: {profile['river_name']} ({wl_str}{current_pt['discharge_m3s']} m³/s — {current_pt['stage_label']})"
+            new_records.append(
+                IngestedRecord(
+                    event_id=f"cwc_ffs:{profile['city'].lower().replace(' ', '_')}:{today_str}",
+                    source="cwc_ffs",
+                    hazard_type="flood",
+                    geometry=Point(lon, lat),
+                    event_time=now_utc,
+                    ingest_time=now_utc,
+                    resolution_tier=ResolutionTier.POINT,
+                    district_id=district_id or profile["city"],
+                    severity_raw=sev_str,
+                    confidence=0.92,
+                    raw_payload={
+                        "title": title_txt,
+                        "authority": profile["flood_authority"],
+                        "cwc_station": profile["cwc_station"],
+                        "cwc_station_code": profile.get("cwc_station_code"),
+                        "live_cwc_telemetry": bool(cwc_live.get("live_cwc_telemetry")),
+                        "river_name": profile["river_name"],
+                        "rivers_in_city": profile["rivers_in_city"],
+                        "water_level_m": current_pt["water_level_m"],
+                        "danger_level_m": danger_lvl,
+                        "discharge_m3s": current_pt["discharge_m3s"],
+                    },
                 )
-                new_records.append(
-                    IngestedRecord(
-                        event_id=f"cwc_ffs:{profile['city'].lower().replace(' ', '_')}:{today_str}",
-                        source="cwc_ffs",
-                        hazard_type="flood",
-                        geometry=Point(lon, lat),
-                        event_time=now_utc,
-                        ingest_time=now_utc,
-                        resolution_tier=ResolutionTier.POINT,
-                        district_id=district_id or profile["city"],
-                        severity_raw=sev_str,
-                        confidence=0.92,
-                        raw_payload={
-                            "title": title_txt,
-                            "authority": profile["flood_authority"],
-                            "cwc_station": profile["cwc_station"],
-                            "cwc_station_code": profile.get("cwc_station_code"),
-                            "live_cwc_telemetry": bool(cwc_live.get("live_cwc_telemetry")),
-                            "river_name": profile["river_name"],
-                            "rivers_in_city": profile["rivers_in_city"],
-                            "water_level_m": current_pt["water_level_m"],
-                            "danger_level_m": danger_lvl,
-                            "discharge_m3s": current_pt["discharge_m3s"],
-                        },
-                    )
-                )
+            )
 
         # NCS Earthquakes within 72h & 250 km
         for q in ncs_quakes[:3]:
