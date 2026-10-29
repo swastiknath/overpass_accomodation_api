@@ -648,25 +648,28 @@ class LLMExplainer:
                 tips = list(entry.get("tips", []))
 
                 if h == "flood" and india_prof:
-                    r_name = (river_telemetry or {}).get("river_name") or india_prof["river_name"]
-                    cwc_st = (river_telemetry or {}).get("cwc_station") or india_prof["cwc_station"]
-                    curr_wl = (river_telemetry or {}).get("current_water_level_m") or india_prof["normal_level_m"]
-                    warn_wl = (river_telemetry or {}).get("warning_level_m") or india_prof["warning_level_m"]
-                    dang_wl = (river_telemetry or {}).get("danger_level_m") or india_prof["danger_level_m"]
+                    r_name = (river_telemetry or {}).get("river_name") or india_prof.get("river_name", "River")
+                    cwc_st = (river_telemetry or {}).get("cwc_station") or india_prof.get("cwc_station", "CWC Gauge")
+                    curr_wl = (river_telemetry or {}).get("current_water_level_m") or india_prof.get("normal_level_m")
+                    warn_wl = (river_telemetry or {}).get("warning_level_m") or india_prof.get("warning_level_m")
+                    dang_wl = (river_telemetry or {}).get("danger_level_m") or india_prof.get("danger_level_m")
                     hazard_name = f"River Flood & CWC Water Level Telemetry ({r_name})"
+                    wl_str = f"Current river level is {curr_wl} m" if curr_wl is not None else "River flow is monitored"
                     tips = [
-                        f"CWC Gauge ({cwc_st}): Current river level is {curr_wl} m (Warning Level: {warn_wl} m | Danger Level: {dang_wl} m).",
-                        f"Upstream discharge is regulated via {india_prof['upstream_control']}; heed barrage release sirens and riverbank alerts.",
+                        f"CWC Gauge ({cwc_st}): {wl_str} (Warning Level: {warn_wl} m | Danger Level: {dang_wl} m)."
+                        if (warn_wl and dang_wl)
+                        else f"CWC Gauge ({cwc_st}): {wl_str}.",
+                        f"Upstream discharge is regulated via {india_prof.get('upstream_control', 'Basin Regulators')}; heed barrage release sirens and riverbank alerts.",
                         *tips[:2],
                     ]
                     authorities = [
                         OfficialAuthority(
-                            name=india_prof["flood_authority"],
+                            name=india_prof.get("flood_authority", "Central Water Commission"),
                             url="https://ffs.india-water.gov.in",
-                            helpline=india_prof["sdma_helpline"].split("/")[0].strip(),
+                            helpline=india_prof.get("sdma_helpline", "112").split("/")[0].strip(),
                         ),
                         OfficialAuthority(
-                            name=india_prof["sdma_name"],
+                            name=india_prof.get("sdma_name", "State Disaster Management Authority"),
                             url="https://sachet.ndma.gov.in",
                             helpline="1070 / 1077",
                         ),

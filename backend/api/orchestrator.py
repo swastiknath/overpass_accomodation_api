@@ -23,12 +23,13 @@ from gis.schema import IngestedRecord, ResolutionTier
 from gis.harmonize import snap_to_admin_boundary, snap_to_h3
 from connectors.acled_client import ACLEDClient
 from connectors.crime_client import CrimeClient
+from connectors.cyclone_client import CycloneTelemetryClient
 from connectors.disaster_alerts_client import DisasterAlertsClient
 from connectors.india_disaster_river_client import IndiaDisasterAndRiverClient
 from connectors.news_client import NewsClient
 from connectors.weather_client import WeatherClient
 from connectors.travel_advisory_client import TravelAdvisoryClient
-from analytics.historical_service import compute_historical_stats
+from analytics.historical_service import compute_historical_stats, fetch_usgs_earthquake_history_async
 from fusion.config import FusionConfig, load_fusion_config
 from fusion.engine import compute_fusion_at_location
 from hotels.models import AccessToHelp, Hotel, HotelScored
@@ -58,6 +59,7 @@ class SignalOrchestrator:
         # Clients
         self.disaster_client = DisasterAlertsClient(settings=self.settings)
         self.india_disaster_client = IndiaDisasterAndRiverClient(settings=self.settings)
+        self.cyclone_client = CycloneTelemetryClient(settings=self.settings)
         self.acled_client = ACLEDClient(settings=self.settings)
         self.weather_client = WeatherClient(settings=self.settings)
         self.crime_client = CrimeClient(settings=self.settings)
@@ -124,6 +126,9 @@ class SignalOrchestrator:
         # ── 1. Concurrent Fetching ──────────────────────────────────────────
         matched_advisory: dict[str, Any] | None = None
         river_flood_payload: dict[str, Any] | None = None
+        cyclone_payload: dict[str, Any] | None = None
+        earthquake_history: list[dict[str, Any]] | None = None
+        conflict_history: list[IngestedRecord] | None = None
 
         if demo_mode:
             logger.info("DEMO_MODE=True: Loading fixture responses for all connectors.")
@@ -167,6 +172,16 @@ class SignalOrchestrator:
                     )
                 except Exception as ind_exc:
                     logger.debug(f"Demo India river telemetry fallback: {ind_exc}")
+            try:
+                cyclone_payload, _demo_cyc_recs = await asyncio.wait_for(
+                    self.cyclone_client.fetch_cyclone_telemetry_async(
+                        lat=lat, lon=lon, location_name=location_name, state=state_name,
+                        country=resolved_country, is_in_india=bool(is_in_india),
+                    ),
+                    timeout=12.0,
+                )
+            except Exception as cyc_exc:
+                logger.debug(f"Demo cyclone telemetry unavailable: {cyc_exc}")
         else:
             # Live concurrent queries with circuit breakers / per-connector timeout
             disaster_task = asyncio.wait_for(self.disaster_client.get_all_active_async(bbox), timeout=12.0)
@@ -195,11 +210,85 @@ class SignalOrchestrator:
                 timeout=6.0,
             )
 
+            cyclone_task = asyncio.wait_for(
+                self.cyclone_client.fetch_cyclone_telemetry_async(
+                    lat=lat,
+                    lon=lon,
+                    location_name=location_name,
+                    state=state_name,
+                    country=resolved_country,
+                    is_in_india=bool(is_in_india),
+                ),
+                timeout=12.0,
+            )
+            global_river_task = (
+                asyncio.wait_for(
+                    self.india_disaster_client.fetch_global_city_river_async(
+                        lat=lat, lon=lon, location_name=location_name, country=resolved_country
+                    ),
+                    timeout=10.0,
+                )
+                if not is_in_india
+                else asyncio.sleep(0, result=None)
+            )
+
+            quake_hist_task = asyncio.wait_for(fetch_usgs_earthquake_history_async(lat, lon), timeout=10.0)
+            acled_hist_task = asyncio.wait_for(
+                self.acled_client.get_events_async(bbox_or_country=bbox, start_date="2021-01-01"),
+                timeout=12.0,
+            )
+
             results = await asyncio.gather(
                 disaster_task, acled_task, weather_task, crime_task, news_task, hotel_task, advisory_task,
+                cyclone_task, global_river_task, quake_hist_task, acled_hist_task,
                 return_exceptions=True,
             )
-            disaster_res, acled_res, weather_res, crime_res, news_res, hotels_res, advisory_res = results
+            (
+                disaster_res, acled_res, weather_res, crime_res, news_res, hotels_res, advisory_res,
+                cyclone_res, global_river_res, quake_hist_res, acled_hist_res,
+            ) = results
+
+            if isinstance(quake_hist_res, list):
+                earthquake_history = quake_hist_res
+                sources_meta["usgs_history"] = {
+                    "status": "active",
+                    "source": "USGS FDSN Earthquake Catalogue 2021–present",
+                    "last_fetched": now_utc.isoformat(),
+                }
+            else:
+                logger.warning(f"USGS historical earthquake fetch failed: {quake_hist_res}")
+            if isinstance(acled_hist_res, list) and (self.settings.acled_email and self.settings.acled_password):
+                conflict_history = acled_hist_res
+            elif isinstance(acled_hist_res, Exception):
+                logger.warning(f"ACLED historical fetch failed: {acled_hist_res}")
+
+            # Process live cyclone telemetry (GDACS TC, IMD/SACHET bulletins, 15-day outlook, ERA5 archive)
+            if isinstance(cyclone_res, Exception) or not cyclone_res:
+                logger.warning(f"Cyclone telemetry connector failed: {cyclone_res}")
+                sources_meta["cyclone_telemetry"] = {"status": "failed", "error": str(cyclone_res)}
+            else:
+                cyclone_payload, cyclone_records = cyclone_res
+                sources_meta["cyclone_telemetry"] = {
+                    "status": "active",
+                    "source": cyclone_payload.get("monitoring_authority", "GDACS / Open-Meteo"),
+                    "last_fetched": now_utc.isoformat(),
+                }
+                for crec in cyclone_records:
+                    all_records.append(crec)
+                    coverage["cyclone"] = "contributing"
+
+            # Process global (non-India) city-bounded live river flow
+            if not is_in_india:
+                if isinstance(global_river_res, dict):
+                    river_flood_payload = global_river_res
+                    sources_meta["glofas_river"] = {
+                        "status": "active",
+                        "source": "Copernicus GloFAS River Discharge (Open-Meteo Flood API)",
+                        "last_fetched": now_utc.isoformat(),
+                    }
+                elif isinstance(global_river_res, Exception):
+                    logger.warning(f"Global river flow connector failed: {global_river_res}")
+                    sources_meta["glofas_river"] = {"status": "failed", "error": str(global_river_res)}
 
             # Process Bhuvan / ISRO geo-hazards & catalogue
             bhuvan_path = Path("data/landing/private/bhuvan/live_hazards.geojson")
@@ -329,7 +418,7 @@ class SignalOrchestrator:
                             weather_data=weather_res if isinstance(weather_res, dict) else None,
                             existing_records=all_records,
                         ),
-                        timeout=7.5,
+                        timeout=10.0,
                     )
                     if river_flood_payload:
                         auth_meta = river_flood_payload.get("authorities", {})
@@ -492,54 +581,6 @@ class SignalOrchestrator:
         h_str = f"{round(lat, 3)}:{round(lon, 3)}:{round(alpha, 2)}:{radius_km}:{self.fusion_cfg.config_version}"
         report_id = f"rep_{hashlib.sha256(h_str.encode('utf-8')).hexdigest()[:16]}"
 
-        if not news_articles_list:
-            clean_loc = location_name.split(",")[0].strip()
-            is_himachal = "himachal" in location_name.lower() or "manali" in location_name.lower()
-            is_india = "india" in location_name.lower() or is_himachal
-
-            if is_himachal:
-                news_articles_list = [
-                    {
-                        "title": f"Himachal Regional Travel & Highway Advisory for {clean_loc}",
-                        "url": "https://news.google.com/search?q=" + urllib.parse.quote(f"{clean_loc} Himachal travel news"),
-                        "source": "The Tribune India",
-                        "seendate": now_utc.strftime("%b %d, %Y"),
-                        "category": "safety",
-                        "snippet": f"Local authorities advise commuters and tourists visiting {clean_loc} to monitor road conditions and weather advisories.",
-                    },
-                    {
-                        "title": f"State Traffic & District Administration Updates for {clean_loc}",
-                        "url": "https://news.google.com/search?q=" + urllib.parse.quote(f"{clean_loc} administration news"),
-                        "source": "Hindustan Times",
-                        "seendate": now_utc.strftime("%b %d, %Y"),
-                        "category": "socio_political",
-                        "snippet": f"Routine road maintenance and weather-monitoring checkpoints active along the access corridors into {clean_loc}.",
-                    },
-                ]
-            elif is_india:
-                news_articles_list = [
-                    {
-                        "title": f"District Civic & Public Order Bulletin for {clean_loc}",
-                        "url": "https://news.google.com/search?q=" + urllib.parse.quote(f"{clean_loc} news politics"),
-                        "source": "Press Trust of India",
-                        "seendate": now_utc.strftime("%b %d, %Y"),
-                        "category": "socio_political",
-                        "snippet": f"Municipal and district administrative coordination continues with monitored transit checkpoints across {clean_loc}.",
-                    },
-                ]
-            else:
-                news_articles_list = [
-                    {
-                        "title": f"Regional Situational & Socio-Political Developments in {clean_loc}",
-                        "url": "https://news.google.com/search?q=" + urllib.parse.quote(f"{clean_loc} politics security news"),
-                        "source": "International News Wire",
-                        "seendate": now_utc.strftime("%b %d, %Y"),
-                        "category": "socio_political",
-                        "snippet": f"Official diplomatic and civic reports monitoring the regional security, public order, and socio-political landscape in {clean_loc}.",
-                    },
-                ]
-
-
         report = {
             "report_id": report_id,
             "demo": demo_mode,
@@ -585,6 +626,7 @@ class SignalOrchestrator:
             "weather_and_air_quality": weather_res if isinstance(weather_res, dict) else {},
             "travel_advisories": matched_advisory,
             "river_flood_telemetry": river_flood_payload,
+            "cyclone_telemetry": cyclone_payload,
             "historical_stats": compute_historical_stats(
                 location_name=location_name,
                 lat=lat,
@@ -594,6 +636,9 @@ class SignalOrchestrator:
                 active_records=all_records,
                 news_articles=news_articles_list,
                 river_flood_telemetry=river_flood_payload,
+                cyclone_telemetry=cyclone_payload,
+                earthquake_history=earthquake_history,
+                conflict_history=conflict_history,
             ),
             "crime_statistics": crime_stats_payload,
             "disclaimer": DISCLAIMER_TEXT,

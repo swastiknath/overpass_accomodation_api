@@ -209,6 +209,7 @@ export interface SearchReport {
   weather_and_air_quality?: WeatherAndAirQuality;
   travel_advisories?: TravelAdvisoryInfo | null;
   river_flood_telemetry?: RiverFloodTelemetry | null;
+  cyclone_telemetry?: CycloneTelemetry | null;
   historical_stats?: HistoricalStats;
   crime_statistics?: CrimeStatistics;
   disclaimer: string;
@@ -221,18 +222,158 @@ export interface SearchReport {
 
 export interface RiverForecastPoint {
   date: string;
-  water_level_m: number;
-  normal_level_m: number;
-  warning_level_m: number;
-  danger_level_m: number;
-  hfl_m: number;
+  is_past?: boolean;
+  water_level_m: number | null;
+  normal_level_m?: number | null;
+  warning_level_m?: number | null;
+  danger_level_m?: number | null;
+  hfl_m?: number | null;
   discharge_m3s: number;
   discharge_max_m3s?: number;
+  discharge_min_m3s?: number;
   discharge_cusecs: number;
-  rainfall_mm: number;
-  flood_probability_pct: number;
-  stage: "normal" | "watch" | "warning" | "danger";
+  rainfall_mm?: number;
+  flood_probability_pct?: number;
+  stage: "normal" | "watch" | "warning" | "danger" | string;
   stage_label: string;
+}
+
+export interface RiverYearlyFlowTrend {
+  year: string;
+  mean_discharge_m3s: number;
+  mean_discharge_cusecs: number;
+  peak_discharge_m3s: number;
+  peak_discharge_cusecs: number;
+  min_discharge_m3s: number;
+  peak_date: string;
+  high_flow_days: number;
+}
+
+export interface RiverHistoricalFlowStats {
+  timeframe: string;
+  total_observed_days: number;
+  mean_discharge_m3s: number;
+  mean_discharge_cusecs: number;
+  median_discharge_m3s: number;
+  p90_watch_discharge_m3s: number;
+  p98_danger_discharge_m3s: number;
+  peak_discharge_m3s: number | null;
+  peak_discharge_cusecs: number | null;
+  peak_date: string | null;
+  flow_anomaly_pct: number | null;
+  yearly_flow_trends: RiverYearlyFlowTrend[];
+  recent_observed_30d: RiverForecastPoint[];
+}
+
+export interface CycloneForecastDay {
+  date: string;
+  max_wind_speed_kmh: number;
+  max_wind_gust_kmh: number;
+  min_pressure_hpa: number;
+  precipitation_mm: number;
+  precip_probability_pct?: number;
+  imd_category: string;
+  cyclone_risk_pct: number;
+}
+
+export interface ActiveTropicalCyclone {
+  event_id: string;
+  name: string;
+  title?: string;
+  summary?: string;
+  alert_level: string;
+  is_current?: boolean;
+  from_date?: string;
+  to_date?: string;
+  lat: number;
+  lon: number;
+  max_wind_kmh: number;
+  imd_category: string;
+  affected_countries?: string;
+  affected_population?: number | string | null;
+  report_url?: string;
+  cap_url?: string;
+  distance_km: number;
+  in_impact_zone: boolean;
+  country_match?: boolean;
+}
+
+export interface CycloneBulletin {
+  id?: string;
+  title: string;
+  authority?: string;
+  publisher?: string;
+  date?: string;
+  severity?: string;
+  url?: string;
+  is_local?: boolean;
+  area?: string;
+}
+
+export interface CycloneYearlyTrend {
+  year: string;
+  cyclonic_storm_days: number;
+  depression_gale_days: number;
+  max_wind_gust_kmh: number;
+  max_sustained_wind_kmh: number;
+  min_pressure_hpa: number;
+  max_daily_rain_mm: number;
+  peak_date: string;
+  peak_category: string;
+}
+
+export interface CycloneNotableEvent {
+  date: string;
+  peak_wind_gust_kmh: number;
+  max_sustained_wind_kmh: number;
+  min_pressure_hpa: number;
+  rainfall_mm: number;
+  imd_category: string;
+}
+
+export interface CycloneTelemetry {
+  location_name: string;
+  is_in_india: boolean;
+  monitoring_authority: string;
+  active_alert_status: string;
+  realtime_conditions: {
+    observation_time: string;
+    sustained_wind_kmh: number;
+    wind_gust_kmh: number;
+    wind_direction_deg: number;
+    surface_pressure_hpa: number;
+    sea_level_pressure_hpa: number;
+    pressure_drop_hpa: number;
+    precipitation_mm: number;
+    imd_category: string;
+  };
+  imminent_outlook: {
+    has_imminent_cyclone_threat: boolean;
+    threat_level: "Low" | "Watch" | "Elevated" | "Severe" | string;
+    headline: string;
+    peak_forecast_date: string;
+    peak_forecast_wind_gust_kmh: number;
+    peak_forecast_sustained_wind_kmh: number;
+    min_forecast_pressure_hpa: number;
+    max_daily_rainfall_mm: number;
+    peak_imd_category: string;
+    nearest_active_cyclone: ActiveTropicalCyclone | null;
+    forecast_15day: CycloneForecastDay[];
+  };
+  active_global_and_basin_cyclones: ActiveTropicalCyclone[];
+  live_bulletins: CycloneBulletin[];
+  historical_archive: {
+    timeframe: string;
+    total_archived_days: number;
+    total_cyclonic_storm_days: number;
+    total_depression_gale_days: number;
+    max_historical_wind_gust_kmh: number;
+    max_historical_wind_date: string;
+    min_historical_pressure_hpa: number;
+    yearly_trends: CycloneYearlyTrend[];
+    notable_events: CycloneNotableEvent[];
+  };
+  data_sources?: string[];
 }
 
 export interface IndiaAuthorityBulletin {
@@ -274,40 +415,45 @@ export interface FloodWatchIndiaLiveInfo {
 
 export interface RiverFloodTelemetry {
   is_in_india: boolean;
+  has_river_in_city?: boolean;
+  rivers_in_city?: string[];
+  flow_data_available?: boolean;
   city: string;
-  state: string;
+  state?: string | null;
+  country?: string | null;
   river_name: string;
-  basin: string;
-  cwc_station: string;
-  cwc_station_code?: string;
-  upstream_control: string;
-  current_water_level_m: number;
-  normal_level_m: number;
-  warning_level_m: number;
-  danger_level_m: number;
-  hfl_m: number;
-  hfl_year?: number;
-  margin_to_warning_m: number;
-  margin_to_danger_m: number;
-  current_discharge_m3s: number;
-  current_discharge_cusecs: number;
+  basin?: string | null;
+  cwc_station?: string | null;
+  cwc_station_code?: string | null;
+  upstream_control?: string | null;
+  current_water_level_m: number | null;
+  normal_level_m: number | null;
+  warning_level_m: number | null;
+  danger_level_m: number | null;
+  hfl_m: number | null;
+  hfl_year?: number | null;
+  margin_to_warning_m: number | null;
+  margin_to_danger_m: number | null;
+  current_discharge_m3s: number | null;
+  current_discharge_cusecs: number | null;
   current_stage: "normal" | "watch" | "warning" | "danger" | string;
   current_stage_label: string;
   inflow_trend: "Rising" | "Receding" | "Steady" | string;
-  peak_7d_water_level_m: number;
+  peak_7d_water_level_m: number | null;
   peak_7d_date: string;
-  peak_7d_discharge_m3s: number;
+  peak_7d_discharge_m3s: number | null;
   peak_7d_stage_label: string;
-  flood_probability_7d_pct: number;
+  flood_probability_7d_pct: number | null;
   prediction_summary: string;
-  seismic_zone: string;
-  floodwatch_india?: FloodWatchIndiaLiveInfo;
+  seismic_zone?: string | null;
+  historical_flow_stats?: RiverHistoricalFlowStats | null;
+  floodwatch_india?: FloodWatchIndiaLiveInfo | null;
   authorities: {
     flood: string;
-    earthquake: string;
-    wildfire: string;
-    sdma: string;
-    helpline: string;
+    earthquake?: string;
+    wildfire?: string;
+    sdma?: string;
+    helpline?: string;
   };
   forecast_15day: RiverForecastPoint[];
   ncs_recent_earthquakes?: Array<{
@@ -380,6 +526,12 @@ export interface HistoricalYearData {
   conflict_fatalities: number;
   natural_disasters: number;
   disaster_severity_index: number;
+  felt_earthquakes?: number;
+  max_earthquake_magnitude?: number | null;
+  river_high_flow_days?: number | null;
+  river_peak_discharge_m3s?: number | null;
+  cyclonic_storm_days?: number;
+  max_wind_gust_kmh?: number | null;
 }
 
 export interface HazardCategoryBreakdown {
@@ -423,6 +575,7 @@ export interface HistoricalStats {
   conflict_breakdown: HazardCategoryBreakdown[];
   disaster_breakdown: HazardCategoryBreakdown[];
   incident_log: HistoricalIncidentItem[];
+  data_availability?: Record<string, string>;
 }
 
 export interface GovTravelAdvisoryItem {

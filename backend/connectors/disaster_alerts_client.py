@@ -158,13 +158,26 @@ class DisasterAlertsClient(BaseConnector):
                 if lat == 0 and lon == 0:
                     continue
 
+                event_type_raw = entry.get("gdacs_eventtype", entry.get("gdacs_eventname", ""))
+
                 if bbox:
                     lon_min, lat_min, lon_max, lat_max = bbox
-                    if not (lat_min <= lat <= lat_max and lon_min <= lon <= lon_max):
+                    inside = lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
+                    if not inside and str(event_type_raw).strip() == "TC":
+                        # Tropical cyclones affect a wide area: keep the alert when the
+                        # search area centre lies inside the GDACS impact bounding box.
+                        c_lat = (lat_min + lat_max) / 2.0
+                        c_lon = (lon_min + lon_max) / 2.0
+                        try:
+                            gb = [float(v) for v in str(entry.get("gdacs_bbox", "")).split()]
+                            if len(gb) == 4:
+                                inside = gb[0] <= c_lon <= gb[1] and gb[2] <= c_lat <= gb[3]
+                        except ValueError:
+                            inside = False
+                    if not inside:
                         continue
 
                 # Determine hazard type
-                event_type_raw = entry.get("gdacs_eventtype", entry.get("gdacs_eventname", ""))
                 hazard_type = _GDACS_HAZARD_MAP.get(str(event_type_raw).strip(), "earthquake")
 
                 # Severity from alertlevel

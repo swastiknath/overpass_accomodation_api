@@ -33,65 +33,32 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
   const [logPage, setLogPage] = useState<number>(1);
   const [hoveredYear, setHoveredYear] = useState<string | null>(null);
 
-  // Use provided historical_stats or generate fallback if needed
+  // Use provided historical_stats or empty zero-state if unavailable
   const stats: HistoricalStats = report.historical_stats || {
     location_name: report.location?.display_name || "Region",
     timeframe: "2021 – 2026",
     summary: {
-      total_conflicts: 14,
-      total_fatalities: 2,
-      total_disasters: 8,
-      volatility_index: "Moderate",
-      volatility_score: 35,
-      trend_direction: "declining",
-      trend_pct: -15.2,
-      primary_threat: "Public Demonstrations & Civic Protests",
-      disaster_threat: "Severe Meteorological Storms",
+      total_conflicts: 0,
+      total_fatalities: 0,
+      total_disasters: 0,
+      volatility_index: "Low",
+      volatility_score: 0,
+      trend_direction: "stable",
+      trend_pct: 0,
+      primary_threat: "No recorded conflict events",
+      disaster_threat: "No major recorded disasters",
     },
     yearly_trends: [
-      { year: "2021", conflict_events: 4, conflict_fatalities: 1, natural_disasters: 2, disaster_severity_index: 3.4 },
-      { year: "2022", conflict_events: 3, conflict_fatalities: 1, natural_disasters: 2, disaster_severity_index: 3.9 },
-      { year: "2023", conflict_events: 3, conflict_fatalities: 0, natural_disasters: 2, disaster_severity_index: 4.1 },
-      { year: "2024", conflict_events: 2, conflict_fatalities: 0, natural_disasters: 1, disaster_severity_index: 2.8 },
-      { year: "2025", conflict_events: 1, conflict_fatalities: 0, natural_disasters: 1, disaster_severity_index: 2.2 },
-      { year: "2026", conflict_events: 1, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 1.5 },
+      { year: "2021", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+      { year: "2022", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+      { year: "2023", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+      { year: "2024", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+      { year: "2025", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+      { year: "2026", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
     ],
-    conflict_breakdown: [
-      { category: "Demonstrations & Rallies", count: 8, percentage: 57, metric_label: "Crowd Events", metric_value: 8, severity: "low" },
-      { category: "Labor / Civic Sit-ins", count: 4, percentage: 29, metric_label: "Permitted", metric_value: 4, severity: "low" },
-      { category: "Isolated Unrest Corridors", count: 2, percentage: 14, metric_label: "Halts", metric_value: 2, severity: "moderate" },
-    ],
-    disaster_breakdown: [
-      { category: "Severe Weather Storms", count: 4, percentage: 50, metric_label: "Met Bulletins", metric_value: "Advisory", severity: "moderate" },
-      { category: "Urban Waterlogging", count: 3, percentage: 38, metric_label: "Drainage", metric_value: "Local", severity: "low" },
-      { category: "Micro-seismic Tremors", count: 1, percentage: 12, metric_label: "Magnitude", metric_value: "M3.2", severity: "low" },
-    ],
-    incident_log: [
-      {
-        id: "hist-01",
-        date: "2026-08-15",
-        category: "civil",
-        title: "Permitted Civic Assembly along Main Corridor",
-        source: "GDELT Incident Observer",
-        location: report.location?.display_name?.split(",")[0] || "City Center",
-        distance_km: 1.5,
-        fatalities: 0,
-        severity: "Low",
-        description: "Public gathering concluded without civil disruption under normal municipal police supervision.",
-      },
-      {
-        id: "hist-02",
-        date: "2025-07-28",
-        category: "disaster",
-        title: "Monsoon Inundation Warning & Underpass Closures",
-        source: "GDACS Disaster Alert",
-        location: "Low-lying Municipal Drainage Corridor",
-        distance_km: 3.2,
-        fatalities: 0,
-        severity: "Moderate",
-        description: "Intense downpour prompted precautionary diversion of commercial traffic.",
-      },
-    ],
+    conflict_breakdown: [],
+    disaster_breakdown: [],
+    incident_log: [],
   };
 
   const { summary, yearly_trends, conflict_breakdown, disaster_breakdown, incident_log } = stats;
@@ -149,73 +116,6 @@ export default function HistoricalDataViewer({ report }: HistoricalDataViewerPro
           }
         }
       });
-    }
-
-    // Ensure grounded protest records are present for demonstration and historical clarity
-    const protestCount = existing.filter((e) => e.category === "protest").length;
-    if (protestCount < 3) {
-      const fallbackProtests: HistoricalIncidentItem[] = [
-        {
-          id: "news-protest-fb-1",
-          date: "2026-09-28",
-          category: "protest",
-          title: `Labor Union & Commercial Transit Demonstration in ${baseCity}`,
-          source: "State News Agency",
-          location: `${baseCity} Central Boulevard`,
-          distance_km: 1.4,
-          fatalities: 0,
-          severity: "Low",
-          description: "Public transportation workers conducted a peaceful morning sit-in over wage revisions; municipal traffic redirected safely.",
-          url: `https://news.google.com/search?q=${encodeURIComponent(baseCity)}+protest+transit`,
-        },
-        {
-          id: "news-protest-fb-2",
-          date: "2026-07-15",
-          category: "protest",
-          title: `Civic Youth & Community Rally for Environmental Protection`,
-          source: "National Press Bureau",
-          location: `${baseCity} Administrative Square`,
-          distance_km: 2.1,
-          fatalities: 0,
-          severity: "Low",
-          description: "Over 350 university students and civic volunteers gathered for a permitted demonstration promoting regional clean air standards.",
-          url: `https://news.google.com/search?q=${encodeURIComponent(baseCity)}+rally+environment`,
-        },
-        {
-          id: "news-protest-fb-3",
-          date: "2026-05-02",
-          category: "protest",
-          title: `Municipal Merchant Guild 3-Hour Shutter-Down Protest`,
-          source: "Regional Daily News",
-          location: `${baseCity} Market District`,
-          distance_km: 1.8,
-          fatalities: 0,
-          severity: "Low",
-          description: "Retail shop owners observed a scheduled temporary work stoppage regarding commercial property taxation guidelines.",
-          url: `https://news.google.com/search?q=${encodeURIComponent(baseCity)}+merchant+guild+protest`,
-        },
-        {
-          id: "news-protest-fb-4",
-          date: "2026-03-19",
-          category: "protest",
-          title: `Teachers & Civil Employees Association Solidarity March`,
-          source: "Civic News Wire",
-          location: `${baseCity} Secretariat Complex`,
-          distance_km: 2.8,
-          fatalities: 0,
-          severity: "Low",
-          description: "Orderly pedestrian march concluded with delivery of a joint petition to district administration officers.",
-          url: `https://news.google.com/search?q=${encodeURIComponent(baseCity)}+employees+march`,
-        },
-      ];
-
-      for (const fb of fallbackProtests) {
-        const norm = fb.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 35);
-        if (!seenTitles.has(norm)) {
-          seenTitles.add(norm);
-          existing.push(fb);
-        }
-      }
     }
 
     return existing;

@@ -199,30 +199,12 @@ class ACLEDClient(BaseConnector):
         self,
         bbox_or_country: str | tuple[float, float, float, float] = "India",
     ) -> list[IngestedRecord]:
-        """Load curated baseline conflict events when ACLED credentials are not configured."""
-        fixture_path = Path("fixtures/acled.json")
-        if not fixture_path.exists():
-            return []
-        try:
-            with open(fixture_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            raw_list = data.get("data", [])
-            if isinstance(bbox_or_country, tuple):
-                lon_min, lat_min, lon_max, lat_max = bbox_or_country
-                filtered = []
-                for ev in raw_list:
-                    try:
-                        lat = float(ev.get("latitude", 0))
-                        lon = float(ev.get("longitude", 0))
-                        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
-                            filtered.append(ev)
-                    except (ValueError, TypeError):
-                        continue
-                return self._to_records(filtered)
-            return self._to_records(raw_list)
-        except Exception as e:
-            logger.warning(f"Failed to load ACLED fallback events: {e}")
-            return []
+        """Return no events when live ACLED data is unavailable.
+
+        Fixture/mock conflict events are never substituted for live ACLED data.
+        """
+        logger.info(f"Live ACLED data unavailable for {bbox_or_country}; returning no conflict events.")
+        return []
 
     def get_events(
         self,

@@ -46,26 +46,26 @@ export default function CombinedTelemetryLinePlot({ report }: CombinedTelemetryL
 
   // 1. Multi-Year Historical & Projected Data (2021 - 2026)
   const yearlyStats = report.historical_stats?.yearly_trends || [
-    { year: "2021", conflict_events: 4, conflict_fatalities: 1, natural_disasters: 2, disaster_severity_index: 3.4 },
-    { year: "2022", conflict_events: 3, conflict_fatalities: 1, natural_disasters: 2, disaster_severity_index: 3.9 },
-    { year: "2023", conflict_events: 3, conflict_fatalities: 0, natural_disasters: 2, disaster_severity_index: 4.1 },
-    { year: "2024", conflict_events: 2, conflict_fatalities: 0, natural_disasters: 1, disaster_severity_index: 2.8 },
-    { year: "2025", conflict_events: 1, conflict_fatalities: 0, natural_disasters: 1, disaster_severity_index: 2.2 },
-    { year: "2026", conflict_events: 1, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 1.5 },
+    { year: "2021", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+    { year: "2022", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+    { year: "2023", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+    { year: "2024", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+    { year: "2025", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
+    { year: "2026", conflict_events: 0, conflict_fatalities: 0, natural_disasters: 0, disaster_severity_index: 0 },
   ];
 
   const baseSafety = report.area_score?.safety_score ?? 75;
-  const baseVol = report.historical_stats?.summary?.volatility_score ?? 35;
+  const baseVol = report.historical_stats?.summary?.volatility_score ?? 15;
 
   const multiYearPoints = yearlyStats.map((y, idx) => {
-    // Proportional protest curve grounded in regional conflict/civic activity
     const conflictVal = y.conflict_events;
-    const protestVal = Math.max(1, Math.round(conflictVal * 1.5 + (idx % 2 === 0 ? 1 : 0)));
+    // Civic protest count from real recorded events
+    const protestVal = conflictVal;
     const disasterVal = y.natural_disasters;
     // Volatility normalized to 0-100 scale
-    const volVal = Math.min(100, Math.max(10, Math.round(baseVol + (5 - idx) * 3 - (idx > 3 ? 6 : 0))));
+    const volVal = Math.min(100, Math.max(0, Math.round(baseVol + (y.disaster_severity_index || 0) * 3)));
     // Safety resilience inverse of volatility
-    const safetyVal = Math.min(98, Math.max(20, Math.round(100 - volVal * 0.75)));
+    const safetyVal = Math.min(100, Math.max(10, Math.round(100 - volVal * 0.75)));
 
     return {
       label: y.year,
@@ -96,7 +96,7 @@ export default function CombinedTelemetryLinePlot({ report }: CombinedTelemetryL
     const rawWind = f.wind_speed_max_kmh ?? 18;
     const rawAqi = f.us_aqi ?? 65;
     const riverPt = riverSeries[idx];
-    const rawRiverFlood = riverPt ? riverPt.flood_probability_pct : Math.min(95, Math.max(8, Math.round(rawRain * 0.65 + 6)));
+    const rawRiverFlood = riverPt && riverPt.flood_probability_pct !== undefined ? riverPt.flood_probability_pct : 0;
 
     return {
       label: f.date ? f.date.slice(5) : "Day",
